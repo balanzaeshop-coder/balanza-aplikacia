@@ -362,6 +362,9 @@ export default function ControlScreen() {
 
         {phase === 'connected' && (
           <View style={{ width: '100%', gap: 12 }}>
+            {/* Pad image */}
+            {padImage && <Image source={padImage} style={s.padImage} resizeMode="contain" />}
+
             {/* Pad name */}
             <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
               <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
@@ -534,6 +537,7 @@ const s = StyleSheet.create({
   subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.textSecondary },
   sectionLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14 },
 
+  padImage: { width: '100%', height: 160, marginBottom: 8 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 4 },
   padName: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 28, letterSpacing: -0.5 },
   editIcon: { color: colors.textSecondary, fontSize: 16 },
