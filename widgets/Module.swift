@@ -10,6 +10,11 @@ public class ReactNativeWidgetExtensionModule: Module {
 
         AsyncFunction("startActivity") { (data: [String: Any]) in
             guard #available(iOS 16.2, *) else { return }
+            // End any leftover activities before starting a new one
+            for activity in Activity<BalanzaActivityAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
+            self.activityId = nil
             let attrs = BalanzaActivityAttributes(sessionId: UUID().uuidString)
             let state = BalanzaActivityAttributes.ContentState(
                 speed:   data["speed"]   as? Double ?? 0,
@@ -25,8 +30,9 @@ public class ReactNativeWidgetExtensionModule: Module {
 
         AsyncFunction("updateActivity") { (data: [String: Any]) in
             guard #available(iOS 16.2, *) else { return }
-            guard let id = self.activityId else { return }
-            guard let activity = Activity<BalanzaActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
+            guard let id = self.activityId,
+                  let activity = Activity<BalanzaActivityAttributes>.activities.first(where: { $0.id == id })
+            else { return }
             let state = BalanzaActivityAttributes.ContentState(
                 speed:   data["speed"]   as? Double ?? 0,
                 steps:   data["steps"]   as? Int    ?? 0,
@@ -38,9 +44,9 @@ public class ReactNativeWidgetExtensionModule: Module {
 
         AsyncFunction("endActivity") { () in
             guard #available(iOS 16.2, *) else { return }
-            guard let id = self.activityId else { return }
-            guard let activity = Activity<BalanzaActivityAttributes>.activities.first(where: { $0.id == id }) else { return }
-            await activity.end(nil, dismissalPolicy: .immediate)
+            for activity in Activity<BalanzaActivityAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
             self.activityId = nil
         }
 
