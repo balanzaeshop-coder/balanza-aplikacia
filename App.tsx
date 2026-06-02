@@ -9,6 +9,7 @@ import ControlScreen from './src/screens/ControlScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import GoalsScreen from './src/screens/GoalsScreen';
+import ShopScreen from './src/screens/ShopScreen';
 import { colors, fonts } from './src/theme';
 
 const Tab = createBottomTabNavigator();
@@ -59,6 +60,11 @@ export default function App() {
           name="Ciele"
           component={GoalsScreen}
           options={{ tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>🎯</Text> }}
+        />
+        <Tab.Screen
+          name="Obchod"
+          component={ShopScreen}
+          options={{ tabBarIcon: ({ color }) => <Text style={{ fontSize: 18, color }}>🛍️</Text> }}
         />
       </Tab.Navigator>
     </NavigationContainer>

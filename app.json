@@ -31,7 +31,8 @@
           "bluetoothAlwaysPermission": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-web-browser"
     ],
     "scheme": "balanza",
     "ios": {
