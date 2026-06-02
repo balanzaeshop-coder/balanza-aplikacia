@@ -66,6 +66,8 @@ export default function ControlScreen() {
   const sessionStart = useRef<number | null>(null);
   const sessionStepsStart = useRef(0);
   const sessionDistStart = useRef(0);
+  const statusRef = useRef<PadStatus | null>(null);
+  const prevBeltState = useRef<number | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -78,8 +80,15 @@ export default function ControlScreen() {
       if (orig) setOrigName(orig);
     });
     ble.onStatusUpdate(s => {
+      statusRef.current = s;
       setStatus(s);
       setRunning(s.beltState === 1);
+      // Auto-save when belt stops itself (e.g. user steps off A1 Plus)
+      if (prevBeltState.current === 1 && s.beltState !== 1 && sessionStart.current) {
+        endLiveActivity();
+        persistSession(s);
+      }
+      prevBeltState.current = s.beltState;
       if (sessionStart.current) {
         const seconds = Math.round((Date.now() - sessionStart.current) / 1000);
         const steps   = Math.max(0, s.steps - sessionStepsStart.current);
@@ -98,6 +107,7 @@ export default function ControlScreen() {
       setStatus(null);
       setRunning(false);
       sessionStart.current = null;
+      prevBeltState.current = null;
     };
     autoConnect();
     return () => { ble.destroy(); linkingSub.remove(); };
@@ -195,26 +205,30 @@ export default function ControlScreen() {
     startLiveActivity({ speed: startSpeed, steps: 0, km: 0, seconds: 0 });
   }
 
+  async function persistSession(s: PadStatus) {
+    if (!sessionStart.current) return;
+    const duration = Math.round((Date.now() - sessionStart.current) / 1000);
+    const distance = Math.max(0, s.distance - sessionDistStart.current);
+    const steps = Math.max(0, s.steps - sessionStepsStart.current);
+    const avgSpeed = duration > 0 ? (distance / duration) * 3600 : 0;
+    sessionStart.current = null;
+    if (duration > 5) {
+      const profile = await loadProfile();
+      const calories = calcCalories(profile, avgSpeed, duration);
+      await saveWorkout({ duration, distance, steps, avgSpeed, calories });
+      await updateStreak();
+      setRingsKey(k => k + 1);
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - duration * 1000);
+      syncWorkoutToHealth({ startDate, endDate, steps, distanceKm: distance, calories }).catch(() => {});
+    }
+  }
+
   async function handleStop() {
     await ble.stopBelt();
     endLiveActivity();
-    if (sessionStart.current && status) {
-      const duration = Math.round((Date.now() - sessionStart.current) / 1000);
-      const distance = Math.max(0, status.distance - sessionDistStart.current);
-      const steps = Math.max(0, status.steps - sessionStepsStart.current);
-      const avgSpeed = duration > 0 ? (distance / duration) * 3600 : 0;
-      if (duration > 5) {
-        const profile = await loadProfile();
-        const calories = calcCalories(profile, avgSpeed, duration);
-        await saveWorkout({ duration, distance, steps, avgSpeed, calories });
-        await updateStreak();
-        setRingsKey(k => k + 1);
-        const endDate = new Date();
-        const startDate = new Date(endDate.getTime() - duration * 1000);
-        syncWorkoutToHealth({ startDate, endDate, steps, distanceKm: distance, calories }).catch(() => {});
-      }
-      sessionStart.current = null;
-    }
+    const s = statusRef.current;
+    if (s) await persistSession(s);
   }
 
   function changeSpeed(delta: number) {
