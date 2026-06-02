@@ -8,6 +8,13 @@
     "userInterfaceStyle": "light",
     "plugins": [
       [
+        "react-native-widget-extension",
+        {
+          "widgetsFolder": "widgets",
+          "deploymentTarget": "16.2"
+        }
+      ],
+      [
         "@kingstinct/react-native-healthkit",
         {
           "NSHealthShareUsageDescription": "Balanza číta dáta z Apple Health pre lepšie štatistiky aktivity",
@@ -35,7 +42,8 @@
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
-        "com.apple.developer.healthkit.access": []
+        "com.apple.developer.healthkit.access": [],
+        "com.apple.security.application-groups": ["group.sk.balanza.walkingpad"]
       }
     },
     "android": {
