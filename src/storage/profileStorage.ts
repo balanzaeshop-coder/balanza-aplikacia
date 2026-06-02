@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export interface UserProfile {
+  name: string;
   weight: number;  // kg
   height: number;  // cm
   age: number;
@@ -9,7 +10,7 @@ export interface UserProfile {
 
 const KEY = 'user_profile_v1';
 
-const DEFAULT: UserProfile = { weight: 70, height: 175, age: 30, gender: 'male' };
+const DEFAULT: UserProfile = { name: '', weight: 70, height: 175, age: 30, gender: 'male' };
 
 export async function loadProfile(): Promise<UserProfile> {
   const raw = await AsyncStorage.getItem(KEY);

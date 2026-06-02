@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -8,10 +8,40 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
+import Svg, { Circle } from 'react-native-svg';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { BarChart } from 'react-native-chart-kit';
 import { loadWorkouts, deleteWorkout, formatTime, formatDate, Workout } from '../storage/workoutStorage';
-import { colors } from '../theme';
+import { loadProfile } from '../storage/profileStorage';
+import { colors, fonts } from '../theme';
+
+const SCORE = 80;
+const RING_SIZE = 90;
+const STROKE = 8;
+const RADIUS = (RING_SIZE - STROKE) / 2;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+function ScoreRing({ score }: { score: number }) {
+  const progress = CIRCUMFERENCE * (1 - score / 100);
+  return (
+    <View style={{ width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={RING_SIZE} height={RING_SIZE} style={{ position: 'absolute' }}>
+        <Circle cx={RING_SIZE/2} cy={RING_SIZE/2} r={RADIUS} stroke="rgba(255,255,255,0.15)" strokeWidth={STROKE} fill="none" />
+        <Circle
+          cx={RING_SIZE/2} cy={RING_SIZE/2} r={RADIUS}
+          stroke="#fff" strokeWidth={STROKE} fill="none"
+          strokeDasharray={`${CIRCUMFERENCE}`}
+          strokeDashoffset={progress}
+          strokeLinecap="round"
+          rotation="-90" originX={RING_SIZE/2} originY={RING_SIZE/2}
+        />
+      </Svg>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 26, color: '#fff' }}>{score}</Text>
+    </View>
+  );
+}
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 32;
@@ -77,10 +107,21 @@ export default function StatisticsScreen() {
   const [period, setPeriod] = useState<Period>('7d');
   const [metric, setMetric] = useState<ChartMetric>('km');
   const [showHistory, setShowHistory] = useState(false);
+  const [userName, setUserName] = useState('');
+  const [liveStats, setLiveStats] = useState({ steps: 0, km: 0, seconds: 0, active: false });
+  const liveInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => { loadProfile().then(p => setUserName(p.name)); }, []);
 
   useFocusEffect(
     useCallback(() => {
       loadWorkouts().then(setWorkouts);
+      liveInterval.current = setInterval(async () => {
+        const raw = await AsyncStorage.getItem('live_session_stats');
+        setLiveStats(raw ? JSON.parse(raw) : { steps: 0, km: 0, seconds: 0, active: false });
+        loadWorkouts().then(setWorkouts);
+      }, 1000);
+      return () => { if (liveInterval.current) clearInterval(liveInterval.current); };
     }, [])
   );
 
@@ -120,17 +161,75 @@ export default function StatisticsScreen() {
   const allTime  = workouts.reduce((s, w) => s + w.duration, 0);
   const allKcal  = workouts.reduce((s, w) => s + (w.calories ?? 0), 0);
 
+  const today = new Date().toDateString();
+  const todayW = workouts.filter(w => new Date(w.date).toDateString() === today);
+  const todaySteps = todayW.reduce((s, w) => s + w.steps, 0) + liveStats.steps;
+  const todayKm    = todayW.reduce((s, w) => s + w.distance, 0) + liveStats.km;
+  const todaySecs  = todayW.reduce((s, w) => s + w.duration, 0) + liveStats.seconds;
+  const todayKcal  = todayW.reduce((s, w) => s + (w.calories ?? 0), 0);
+
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
 
-      <View style={s.lifetimeCard}>
-        <Text style={s.lifetimeTitle}>Celkovo od začiatku</Text>
-        <View style={s.lifetimeRow}>
-          <LifetimeStat icon="🏃" value={String(workouts.length)} label="tréningov" />
-          <LifetimeStat icon="🗺️" value={allKm.toFixed(0)} label="km" />
-          <LifetimeStat icon="⏱️" value={Math.round(allTime / 3600).toFixed(0)} label="hodín" />
-          <LifetimeStat icon="🔥" value={String(allKcal)} label="kcal" />
+      {/* Score card */}
+      <BlurView intensity={50} tint="dark" style={s.scoreOuter}>
+        <View style={s.scoreInner}>
+          <ScoreRing score={SCORE} />
+          <View style={s.scoreRight}>
+            <Text style={s.scoreTitle}>Skóre dňa · {SCORE}/100</Text>
+            <Text style={s.scoreDesc}>{userName ? `${userName}, tvoje` : 'Tvoje'} dnešné skóre pracovného dňa je {SCORE} bodov.</Text>
+          </View>
         </View>
+      </BlurView>
+
+      {/* Activity breakdown card */}
+      <BlurView intensity={50} tint="dark" style={s.scoreOuter}>
+        <View style={[s.scoreInner, { flexDirection: 'column', gap: 16 }]}>
+          <Text style={s.scoreTitle}>Rozloženie dňa</Text>
+
+          {/* Bar */}
+          <View style={s.breakBar}>
+            <View style={[s.breakSegment, { flex: 3, backgroundColor: '#5B8DEF', borderTopLeftRadius: 8, borderBottomLeftRadius: 8 }]} />
+            <View style={[s.breakSegment, { flex: 4, backgroundColor: '#27AE60' }]} />
+            <View style={[s.breakSegment, { flex: 3, backgroundColor: '#E67E22', borderTopRightRadius: 8, borderBottomRightRadius: 8 }]} />
+          </View>
+
+          {/* Legend */}
+          <View style={s.breakLegend}>
+            <BreakItem color="#5B8DEF" label="Sedenie" value="3h" pct="30%" />
+            <BreakItem color="#27AE60" label="Státie" value="4h" pct="40%" />
+            <BreakItem color="#E67E22" label="Kráčanie" value="3h" pct="30%" />
+          </View>
+        </View>
+      </BlurView>
+
+      {/* Stats grid */}
+      <Text style={s.sectionHeading}>Dnešné čísla:</Text>
+      <View style={s.statsGrid}>
+        <BlurView intensity={50} tint="dark" style={s.statCard}>
+          <View style={s.statCardInner}>
+            <Text style={s.statBig}>{todaySteps.toLocaleString('sk-SK')}</Text>
+            <Text style={s.statSmall}>krokov dnes</Text>
+          </View>
+        </BlurView>
+        <BlurView intensity={50} tint="dark" style={s.statCard}>
+          <View style={s.statCardInner}>
+            <Text style={s.statBig}>{todayKm.toFixed(2)} km</Text>
+            <Text style={s.statSmall}>vzdialenosť</Text>
+          </View>
+        </BlurView>
+        <BlurView intensity={50} tint="dark" style={s.statCard}>
+          <View style={s.statCardInner}>
+            <Text style={s.statBig}>{todayKcal} kcal</Text>
+            <Text style={s.statSmall}>kcal spálených chôdzou</Text>
+          </View>
+        </BlurView>
+        <BlurView intensity={50} tint="dark" style={s.statCard}>
+          <View style={s.statCardInner}>
+            <Text style={s.statBig}>{formatTime(todaySecs)}</Text>
+            <Text style={s.statSmall}>aktívna chôdza</Text>
+          </View>
+        </BlurView>
       </View>
 
       <View style={s.segmentRow}>
@@ -142,16 +241,6 @@ export default function StatisticsScreen() {
           </TouchableOpacity>
         ))}
       </View>
-
-      <View style={s.cardsRow}>
-        <SummaryCard label="Km" value={totalKm.toFixed(1)} />
-        <SummaryCard label="Kroky" value={totalSteps >= 1000 ? `${(totalSteps / 1000).toFixed(1)}k` : String(totalSteps)} />
-        <SummaryCard label="Čas" value={formatTime(totalTime)} />
-        <SummaryCard label="kcal *" value={String(totalKcal)} />
-      </View>
-      <TouchableOpacity style={s.kcalNote} onPress={() => Alert.alert('Ako počítame kalórie', 'Kalórie sú vypočítané so zohľadnením toho, že pri chodiacom stole nehýbeš rukami — na rozdiel od bežnej chôdze. Preto zobrazujeme o 30 % menej ako štandardný vzorec. Je to presnejší odhad pre prácu na chodiacom páse.')}>
-        <Text style={s.kcalNoteText}>* Kalórie sú prispôsobené pre chodiaci stôl (−30% bez pohybu rúk)  ⓘ</Text>
-      </TouchableOpacity>
 
       <View style={s.metricRow}>
         {([['km', 'Km'], ['kroky', 'Kroky'], ['cas', 'Čas'], ['kcal', 'Kcal']] as [ChartMetric, string][]).map(([m, label]) => (
@@ -183,6 +272,16 @@ export default function StatisticsScreen() {
         )}
       </View>
 
+      <View style={s.lifetimeCard}>
+        <Text style={s.lifetimeTitle}>Celkovo od začiatku</Text>
+        <View style={s.lifetimeRow}>
+          <LifetimeStat icon="🏃" value={String(workouts.length)} label="tréningov" />
+          <LifetimeStat icon="🗺️" value={allKm.toFixed(0)} label="km" />
+          <LifetimeStat icon="⏱️" value={Math.round(allTime / 3600).toFixed(0)} label="hodín" />
+          <LifetimeStat icon="🔥" value={String(allKcal)} label="kcal" />
+        </View>
+      </View>
+
       <TouchableOpacity style={s.historyHeader} onPress={() => setShowHistory(v => !v)}>
         <Text style={s.historyTitle}>História tréningov</Text>
         <Text style={s.historyArrow}>{showHistory ? '▲' : '▼'}</Text>
@@ -210,6 +309,17 @@ export default function StatisticsScreen() {
           ))
       )}
     </ScrollView>
+  );
+}
+
+function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
+  return (
+    <View style={s.breakItem}>
+      <View style={[s.breakDot, { backgroundColor: color }]} />
+      <Text style={s.breakLabel}>{label}</Text>
+      <Text style={s.breakValue}>{value}</Text>
+      <Text style={s.breakPct}>{pct}</Text>
+    </View>
   );
 }
 
@@ -243,7 +353,29 @@ function CardStat({ label, value }: { label: string; value: string }) {
 
 const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 48 },
+  content: { padding: 16, paddingBottom: 100 },
+
+  scoreOuter: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 16 },
+  scoreInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, flexDirection: 'row', alignItems: 'center', gap: 20 },
+  scoreRight: { flex: 1 },
+  scoreTitle: { fontFamily: fonts.bold, fontSize: 18, color: '#fff', marginBottom: 8 },
+  scoreDesc: { fontFamily: fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 20 },
+
+  breakBar: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 },
+  breakSegment: { height: '100%' },
+  breakLegend: { flexDirection: 'row', justifyContent: 'space-between' },
+  breakItem: { alignItems: 'center', gap: 4 },
+  breakDot: { width: 10, height: 10, borderRadius: 5 },
+  breakLabel: { fontFamily: fonts.semiBold, fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  breakValue: { fontFamily: fonts.bold, fontSize: 16, color: '#fff' },
+  breakPct: { fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)' },
+
+  sectionHeading: { fontFamily: fonts.bold, fontSize: 22, color: '#fff', marginTop: 24, marginBottom: 12 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  statCard: { width: (SCREEN_WIDTH - 32 - 10) / 2, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
+  statCardInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, minHeight: 100, justifyContent: 'center' },
+  statBig: { fontFamily: fonts.bold, fontSize: 28, color: '#fff' },
+  statSmall: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
 
   lifetimeCard: { backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
   lifetimeTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 16 },

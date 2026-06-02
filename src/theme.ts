@@ -19,4 +19,5 @@ export const fonts = {
   regular: 'CormorantGaramond-Regular',
   semiBold: 'CormorantGaramond-SemiBold',
   bold: 'CormorantGaramond-Bold',
+  boldItalic: 'CormorantGaramond-BoldItalic',
 };

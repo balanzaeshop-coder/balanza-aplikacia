@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Linking,
   Modal,
+  PanResponder,
   Platform,
   ScrollView,
   StyleSheet,
@@ -21,13 +22,14 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Device } from 'react-native-ble-plx';
 import { WalkingPadBLE, PadStatus, MODE_MANUAL } from '../bluetooth/WalkingPadBLE';
-import { saveWorkout, loadWorkouts, formatTime, Workout } from '../storage/workoutStorage';
-import { loadProfile, calcCalories } from '../storage/profileStorage';
+import { saveWorkout, loadWorkouts, formatTime } from '../storage/workoutStorage';
+import { loadProfile, saveProfile, calcCalories, UserProfile } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
 import { startLiveActivity, updateLiveActivity, endLiveActivity, consumePendingCommands } from '../native/liveActivity';
@@ -55,10 +57,114 @@ function getPadImage(origName: string): any | null {
   return null;
 }
 
+const SPEED_MIN = 1.5;
+const SPEED_MAX = 5.0;
+const TICKS = Math.round((SPEED_MAX - SPEED_MIN) / 0.1); // 35 ticks
+
+function SpeedSlider({ value, onChange, onSlidingStart, onSlidingEnd }: {
+  value: number;
+  onChange: (v: number) => void;
+  onSlidingStart?: () => void;
+  onSlidingEnd?: () => void;
+}) {
+  const trackWidth = useRef(0);
+  const lastTick = useRef(Math.round(value * 10));
+  const thumbX = useRef(new Animated.Value(0)).current;
+  const startX = useRef(0);
+
+  function speedToX(speed: number, width: number) {
+    return ((speed - SPEED_MIN) / (SPEED_MAX - SPEED_MIN)) * Math.max(1, width - 52);
+  }
+
+  function xToSpeed(x: number, width: number) {
+    const raw = (x / Math.max(1, width - 52)) * (SPEED_MAX - SPEED_MIN) + SPEED_MIN;
+    return Math.round(Math.min(SPEED_MAX, Math.max(SPEED_MIN, raw)) * 10) / 10;
+  }
+
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponderCapture: () => true,
+    onPanResponderTerminationRequest: () => false,
+    onPanResponderGrant: () => {
+      startX.current = (thumbX as any).__getValue();
+      onSlidingStart?.();
+    },
+    onPanResponderMove: (_, gs) => {
+      if (!trackWidth.current) return;
+      const newX = Math.max(0, Math.min(trackWidth.current - 52, startX.current + gs.dx));
+      thumbX.setValue(newX);
+      const speed = xToSpeed(newX, trackWidth.current);
+      const tick = Math.round(speed * 10);
+      if (tick !== lastTick.current) {
+        lastTick.current = tick;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      onChange(speed);
+    },
+    onPanResponderRelease: () => { onSlidingEnd?.(); },
+    onPanResponderTerminate: () => { onSlidingEnd?.(); },
+  })).current;
+
+  useEffect(() => {
+    if (trackWidth.current > 0) {
+      thumbX.setValue(speedToX(value, trackWidth.current));
+    }
+  }, [value]);
+
+  return (
+    <View style={sl.row}>
+      <Text style={sl.icon}>−</Text>
+      <View
+        style={sl.track}
+        onLayout={e => {
+          trackWidth.current = e.nativeEvent.layout.width;
+          thumbX.setValue(speedToX(value, trackWidth.current));
+        }}
+        {...panResponder.panHandlers}
+      >
+        {Array.from({ length: TICKS + 1 }).map((_, i) => {
+          const isMajor = i % 5 === 0;
+          const pos = (i / TICKS) * 100;
+          return (
+            <View
+              key={i}
+              style={[sl.tick, {
+                left: `${pos}%` as any,
+                height: isMajor ? 16 : 8,
+                opacity: isMajor ? 0.35 : 0.15,
+              }]}
+            />
+          );
+        })}
+        <Animated.View style={[sl.thumb, { transform: [{ translateX: thumbX }] }]} />
+      </View>
+      <Text style={sl.icon}>+</Text>
+    </View>
+  );
+}
+
+const sl = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', marginTop: 16, gap: 10 },
+  icon: { fontFamily: 'CormorantGaramond-Bold', fontSize: 28, color: '#fff', width: 32, textAlign: 'center' },
+  track: { flex: 1, height: 56, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', overflow: 'hidden' },
+  tick: { position: 'absolute', width: 1.5, backgroundColor: '#fff', borderRadius: 1, top: '50%', marginTop: -8 },
+  thumb: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff', top: 3 },
+});
+
 function GlassCard({ children, style }: { children: React.ReactNode; style?: any }) {
   return (
     <BlurView intensity={24} tint="dark" style={[s.glassOuter, style]}>
       <View style={s.glassInner}>{children}</View>
+    </BlurView>
+  );
+}
+
+function LiquidCard({ children, style, active }: { children: React.ReactNode; style?: any; active?: boolean }) {
+  return (
+    <BlurView intensity={60} tint="light" style={[s.liquidOuter, active && s.liquidOuterActive, style]}>
+      <View style={[s.liquidInner, active && s.liquidInnerActive]}>{children}</View>
     </BlurView>
   );
 }
@@ -75,6 +181,12 @@ export default function ControlScreen() {
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [todayStats, setTodayStats] = useState({ steps: 0, km: 0, seconds: 0, workouts: 0 });
+  const [greetingIndex, setGreetingIndex] = useState(0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showDataSharing, setShowDataSharing] = useState(false);
+  const [profile, setProfile] = useState<UserProfile>({ name: '', weight: 70, height: 175, age: 30, gender: 'male' });
+  const [profileForm, setProfileForm] = useState({ name: '', weight: '70', height: '175', age: '30' });
 
   const sessionStart = useRef<number | null>(null);
   const sessionStepsStart = useRef(0);
@@ -84,10 +196,21 @@ export default function ControlScreen() {
   const targetSpeedRef = useRef(startSpeed);
   const justRestored = useRef(false);
   const cmdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const todayBaseSteps = useRef(0);
+  const todayBaseKm = useRef(0);
+  const todayBaseSecs = useRef(0);
   const scrollY = useRef(new Animated.Value(0)).current;
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const bgTranslateY = scrollY.interpolate({ inputRange: [0, BG_HEIGHT], outputRange: [0, -BG_HEIGHT * 0.3], extrapolate: 'clamp' });
   const overlayOpacity = scrollY.interpolate({ inputRange: [0, BG_HEIGHT * 0.6], outputRange: [0, 1], extrapolate: 'clamp' });
+
+  const greetings = (name: string, steps: number, km: number, hours: number) => [
+    `poďme sa hýbať!`,
+    `dnes si ušiel ${steps.toLocaleString('sk-SK')} krokov.`,
+    `dnes si prešiel ${km.toFixed(2)} km.`,
+    `dnes si pracoval ${hours.toFixed(1)} hodín.`,
+  ];
 
   const loadTodayStats = useCallback(async () => {
     const workouts = await loadWorkouts();
@@ -113,6 +236,12 @@ export default function ControlScreen() {
       if (name) setCustomName(name);
       if (orig) setOrigName(orig);
     });
+    loadProfile().then(p => {
+      setProfile(p);
+      setProfileForm({ name: p.name, weight: String(p.weight), height: String(p.height), age: String(p.age) });
+    });
+    const gi = setInterval(() => setGreetingIndex(i => i + 1), 20 * 60 * 1000);
+    return () => clearInterval(gi);
     endLiveActivity();
     ble.onStatusUpdate(s => {
       statusRef.current = s;
@@ -139,10 +268,14 @@ export default function ControlScreen() {
       }
       prevBeltState.current = s.beltState;
       if (sessionStart.current) {
-        const seconds = Math.round((Date.now() - sessionStart.current) / 1000);
-        const steps   = Math.max(0, s.steps - sessionStepsStart.current);
-        const km      = Math.max(0, s.distance - sessionDistStart.current);
-        updateLiveActivity({ speed: s.speed, steps, km, seconds });
+        const sessionSecs  = Math.round((Date.now() - sessionStart.current) / 1000);
+        const sessionSteps = Math.max(0, s.steps - sessionStepsStart.current);
+        const sessionKm    = Math.max(0, s.distance - sessionDistStart.current);
+        const totalSteps   = todayBaseSteps.current + sessionSteps;
+        const totalKm      = todayBaseKm.current + sessionKm;
+        const totalSecs    = todayBaseSecs.current + sessionSecs;
+        updateLiveActivity({ speed: s.speed, steps: totalSteps, km: totalKm, seconds: totalSecs });
+        AsyncStorage.setItem('live_session_stats', JSON.stringify({ steps: totalSteps, km: totalKm, seconds: totalSecs, active: true }));
       }
     });
 
@@ -178,6 +311,7 @@ export default function ControlScreen() {
           sessionStepsStart.current = saved.stepsStart;
           sessionDistStart.current = saved.distStart;
           justRestored.current = true;
+          await loadTodayBase();
         } else {
           await AsyncStorage.removeItem(SESSION_KEY);
         }
@@ -228,6 +362,15 @@ export default function ControlScreen() {
     setPhase('idle');
   }
 
+  async function loadTodayBase() {
+    const all = await loadWorkouts();
+    const today = new Date().toDateString();
+    const todayW = all.filter(w => new Date(w.date).toDateString() === today);
+    todayBaseSteps.current = todayW.reduce((s, w) => s + w.steps, 0);
+    todayBaseKm.current = todayW.reduce((s, w) => s + w.distance, 0);
+    todayBaseSecs.current = todayW.reduce((s, w) => s + w.duration, 0);
+  }
+
   async function handleStart() {
     if (!sessionStart.current) {
       sessionStart.current = Date.now();
@@ -239,10 +382,20 @@ export default function ControlScreen() {
         distStart: sessionDistStart.current,
       }));
     }
-    await ble.setStartSpeed(startSpeed);
-    await ble.setSpeed(startSpeed);
+    await loadTodayBase();
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+    await ble.setMode(1);
+    await delay(120);
+    await ble.setStartSpeed(targetSpeedRef.current);
+    await delay(120);
+    await ble.setSpeed(targetSpeedRef.current);
+    await delay(120);
     await ble.startBelt();
-    startLiveActivity({ speed: startSpeed, steps: 0, km: 0, seconds: 0 });
+    await delay(600);
+    if (statusRef.current?.beltState !== 1) {
+      await ble.startBelt();
+    }
+    startLiveActivity({ speed: targetSpeedRef.current, steps: todayBaseSteps.current, km: todayBaseKm.current, seconds: todayBaseSecs.current });
     cmdInterval.current = setInterval(() => {
       const { delta, stop } = consumePendingCommands();
       if (stop && sessionStart.current) { handleStop(); return; }
@@ -258,6 +411,7 @@ export default function ControlScreen() {
     const avgSpeed = duration > 0 ? (distance / duration) * 3600 : 0;
     sessionStart.current = null;
     await AsyncStorage.removeItem(SESSION_KEY);
+    await AsyncStorage.removeItem('live_session_stats');
     if (duration > 5) {
       const profile = await loadProfile();
       const calories = calcCalories(profile, avgSpeed, duration);
@@ -326,139 +480,194 @@ export default function ControlScreen() {
         contentContainerStyle={s.container}
         keyboardShouldPersistTaps="handled"
         scrollEventThrottle={16}
+        scrollEnabled={scrollEnabled}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
       >
-        {/* Logo */}
+        {/* Header */}
         <View style={s.header}>
-          <Image source={require('../../assets/logo_new.png')} style={s.logo} resizeMode="contain" />
+          <TouchableOpacity style={s.menuBtn} onPress={() => setDrawerOpen(true)}>
+            <View style={s.menuLine} />
+            <View style={s.menuLine} />
+            <View style={s.menuLine} />
+          </TouchableOpacity>
+          <Text style={s.logoText}>Balanza</Text>
+          <View style={{ width: 40 }} />
         </View>
-
-        {/* Denný prehľad */}
-        <View style={s.dailySection}>
-          <Text style={s.dailyTitle}>Dnešný prehľad</Text>
-          <View style={s.dailyRow}>
-            <DailyRing label="Čas v práci" value="0" unit="h" />
-            <DailyRing label="Kroky" value={todayStats.steps.toLocaleString('sk-SK')} unit="krokov" />
-            <DailyRing label="Vzdialenosť" value={todayStats.km.toFixed(2)} unit="km" />
-          </View>
-        </View>
-
-        {/* Pad controls */}
-        {phase === 'idle' && (
-          <GlassCard style={s.cardMargin}>
-            <Text style={s.cardTitle}>Chodiaci pás</Text>
-            <Text style={s.subtitle}>Pripoj chodiaci pás cez Bluetooth</Text>
-            <TouchableOpacity style={s.btnPrimary} onPress={startScan}>
-              <Text style={s.btnText}>Hľadať pás</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={s.btnGhost} onPress={async () => {
-              await AsyncStorage.removeItem(SAVED_DEVICE_KEY);
-              await AsyncStorage.removeItem(DEVICE_NAME_KEY);
-              await AsyncStorage.removeItem(DEVICE_ORIG_KEY);
-              setCustomName(''); setOrigName('');
-            }}>
-              <Text style={s.btnGhostText}>Zabudnúť uložený pás</Text>
-            </TouchableOpacity>
-          </GlassCard>
-        )}
-
-        {(phase === 'scanning' || phase === 'connecting') && (
-          <GlassCard style={s.cardMargin}>
-            <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={[s.subtitle, { marginTop: 12, textAlign: 'center' }]}>
-              {phase === 'scanning' ? 'Hľadám pás...' : 'Pripájam...'}
+        {profile.name ? (
+          <View style={s.greetingBox}>
+            <Text style={s.greetingName}>Ahoj, {profile.name}</Text>
+            <Text style={s.greetingSub}>
+              {greetings(profile.name, todayStats.steps, todayStats.km, todayStats.seconds / 3600)[greetingIndex % greetings(profile.name, todayStats.steps, todayStats.km, todayStats.seconds / 3600).length]}
             </Text>
-          </GlassCard>
-        )}
+          </View>
+        ) : null}
 
-        {phase === 'connected' && (
-          <View style={{ width: '100%', gap: 12 }}>
-            <GlassCard>
-              {/* Pad image */}
-              {padImage && (
-                <Image source={padImage} style={s.padImage} resizeMode="contain" />
-              )}
 
-              {/* Pad name */}
+        {/* Pad preview card */}
+        <LiquidCard style={{ marginBottom: 20 }} active={running}>
+          {phase === 'idle' && (
+            <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+              <Text style={s.padName}>Chodiaci pás</Text>
+              <Text style={[s.subtitle, { marginBottom: 20, marginTop: 4 }]}>Pripoj chodiaci pás cez Bluetooth</Text>
+              <TouchableOpacity style={[s.previewStartBtn, s.previewStartBtnGreen, { alignSelf: 'stretch' }]} onPress={startScan}>
+                <Text style={s.previewStartBtnText}>Hľadať pás</Text>
+              </TouchableOpacity>
+              {(customName || origName) ? (
+                <TouchableOpacity style={s.btnGhost} onPress={async () => {
+                  await AsyncStorage.removeItem(SAVED_DEVICE_KEY);
+                  await AsyncStorage.removeItem(DEVICE_NAME_KEY);
+                  await AsyncStorage.removeItem(DEVICE_ORIG_KEY);
+                  setCustomName(''); setOrigName('');
+                }}>
+                  <Text style={s.btnGhostText}>Zabudnúť uložený pás</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          )}
+
+          {(phase === 'scanning' || phase === 'connecting') && (
+            <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+              <ActivityIndicator size="large" color="#fff" />
+              <Text style={[s.subtitle, { marginTop: 12 }]}>
+                {phase === 'scanning' ? 'Hľadám pás...' : 'Pripájam...'}
+              </Text>
+            </View>
+          )}
+
+          {phase === 'connected' && (
+            <>
+              {padImage && <Image source={padImage} style={s.previewPadImage} resizeMode="contain" />}
               <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
                 <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
                 <Text style={s.editIcon}>✎</Text>
               </TouchableOpacity>
-
-              {/* Live stats */}
-              <View style={[s.liveStatsRow, s.statsSection]}>
-                <LiveStat label="km/h" value={status ? status.speed.toFixed(1) : '—'} big />
-                <View style={s.vDivider} />
-                <LiveStat label="čas" value={formatTime(status?.time ?? 0)} />
-                <View style={s.vDivider} />
-                <LiveStat label="kroky" value={String(status?.steps ?? 0)} />
-                <View style={s.vDivider} />
-                <LiveStat label="km" value={status ? status.distance.toFixed(2) : '—'} />
+              <View style={s.previewSpeedRow}>
+                <Text style={s.previewSpeed}>{status ? status.speed.toFixed(1).replace('.', ',') : targetSpeed.toFixed(1).replace('.', ',')}</Text>
+                <Text style={s.previewSpeedUnit}>km/h</Text>
               </View>
-
-              {/* Divider */}
-              <View style={s.hDivider} />
-
-              {/* Speed control */}
-              <View style={s.speedControl}>
-                <Text style={s.speedControlLabel}>Štartovacia rýchlosť</Text>
-                <Text style={s.speedValue}>{targetSpeed.toFixed(1)}</Text>
-                <View style={s.speedBtnsRow}>
-                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.5)}>
-                    <Text style={s.speedBtnText}>−0.5</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.1)}>
-                    <Text style={s.speedBtnText}>−0.1</Text>
-                  </TouchableOpacity>
-                  <View style={{ flex: 1 }} />
-                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.1)}>
-                    <Text style={s.speedBtnText}>+0.1</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.5)}>
-                    <Text style={s.speedBtnText}>+0.5</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Start / Stop */}
+              <SpeedSlider
+                value={targetSpeed}
+                onChange={v => { targetSpeedRef.current = v; setTargetSpeed(v); if (sessionStart.current) ble.setSpeed(v); }}
+                onSlidingStart={() => setScrollEnabled(false)}
+                onSlidingEnd={() => setScrollEnabled(true)}
+              />
               <TouchableOpacity
-                style={[s.btnPrimary, { marginTop: 20 }, running && s.btnStop]}
+                style={[s.previewStartBtn, !running && s.previewStartBtnGreen]}
                 onPress={running ? handleStop : handleStart}
               >
-                <Text style={s.btnText}>{running ? 'Zastaviť tréning' : 'Spustiť tréning'}</Text>
+                <Text style={s.previewStartBtnText}>{running ? 'Zastaviť' : 'Spustiť'}</Text>
               </TouchableOpacity>
-
               <TouchableOpacity style={s.btnGhost} onPress={disconnect}>
                 <Text style={s.btnGhostText}>Odpojiť</Text>
               </TouchableOpacity>
-            </GlassCard>
+            </>
+          )}
+        </LiquidCard>
+
+        {/* Desk card */}
+        <LiquidCard style={{ marginBottom: 20 }}>
+          <View style={s.deskRow}>
+            <Image source={require('../../assets/desk.png')} style={s.deskImage} resizeMode="contain" />
+            <View style={s.deskInfo}>
+              <View style={s.deskTextRow}>
+                <View>
+                  <Text style={s.deskLabel}>Aktuálna</Text>
+                  <Text style={s.deskLabel}>výška:</Text>
+                </View>
+                <Text style={s.deskHeight}>74 cm</Text>
+              </View>
+            </View>
           </View>
-        )}
+        </LiquidCard>
 
-        {/* Today's stats */}
-        <View style={s.sectionHeader}>
-          <Text style={s.sectionTitle}>Dnes</Text>
-        </View>
 
-        <View style={s.todayGrid}>
-          <GlassCard style={s.todayCard}>
-            <Text style={s.todayValue}>{todayStats.steps.toLocaleString('sk-SK')}</Text>
-            <Text style={s.todayLabel}>krokov</Text>
-          </GlassCard>
-          <GlassCard style={s.todayCard}>
-            <Text style={s.todayValue}>{todayStats.km.toFixed(2)}</Text>
-            <Text style={s.todayLabel}>km</Text>
-          </GlassCard>
-          <GlassCard style={s.todayCard}>
-            <Text style={s.todayValue}>{formatTime(todayStats.seconds)}</Text>
-            <Text style={s.todayLabel}>čas</Text>
-          </GlassCard>
-          <GlassCard style={s.todayCard}>
-            <Text style={s.todayValue}>{todayStats.workouts}</Text>
-            <Text style={s.todayLabel}>tréningy</Text>
-          </GlassCard>
-        </View>
+
       </Animated.ScrollView>
+
+      {/* Drawer */}
+      <Modal visible={drawerOpen} transparent animationType="none" onRequestClose={() => setDrawerOpen(false)}>
+        <View style={{ flex: 1, flexDirection: 'row' }}>
+          <BlurView intensity={32} tint="dark" style={s.drawer}>
+            <View style={s.drawerInner}>
+              <Text style={s.drawerTitle}>Menu</Text>
+              <TouchableOpacity style={s.drawerItem} onPress={() => { setDrawerOpen(false); setTimeout(() => setShowProfile(true), 300); }}>
+                <Text style={s.drawerItemIcon}>👤</Text>
+                <Text style={s.drawerItemText}>Nastavenie postavy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={s.drawerItem} onPress={() => { setDrawerOpen(false); setTimeout(() => setShowDataSharing(true), 300); }}>
+                <Text style={s.drawerItemIcon}>🔗</Text>
+                <Text style={s.drawerItemText}>Zdieľanie dát</Text>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setDrawerOpen(false)} />
+        </View>
+      </Modal>
+
+      {/* Profile modal */}
+      <Modal visible={showProfile} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowProfile(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView style={{ flex: 1, backgroundColor: colors.bg }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }}>
+            <Text style={s.modalTitle}>Nastavenie postavy</Text>
+            {[
+              { key: 'name', label: 'Meno', placeholder: 'Ján Novák', keyboard: 'default' },
+              { key: 'weight', label: 'Váha (kg)', placeholder: '70', keyboard: 'numeric' },
+              { key: 'height', label: 'Výška (cm)', placeholder: '175', keyboard: 'numeric' },
+              { key: 'age', label: 'Vek', placeholder: '30', keyboard: 'numeric' },
+            ].map(f => (
+              <View key={f.key} style={{ marginBottom: 16 }}>
+                <Text style={s.inputLabel}>{f.label}</Text>
+                <TextInput
+                  style={s.input}
+                  value={(profileForm as any)[f.key]}
+                  onChangeText={v => setProfileForm(prev => ({ ...prev, [f.key]: v }))}
+                  placeholder={f.placeholder}
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardType={f.keyboard as any}
+                  autoCapitalize={f.key === 'name' ? 'words' : 'none'}
+                />
+              </View>
+            ))}
+            <TouchableOpacity style={s.btnPrimary} onPress={async () => {
+              const updated: UserProfile = {
+                ...profile,
+                name: profileForm.name,
+                weight: parseFloat(profileForm.weight) || 70,
+                height: parseFloat(profileForm.height) || 175,
+                age: parseInt(profileForm.age) || 30,
+              };
+              await saveProfile(updated);
+              setProfile(updated);
+              setShowProfile(false);
+            }}>
+              <Text style={s.btnText}>Uložiť</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.btnGhost} onPress={() => setShowProfile(false)}>
+              <Text style={s.btnGhostText}>Zatvoriť</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Data sharing modal */}
+      <Modal visible={showDataSharing} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowDataSharing(false)}>
+        <View style={{ flex: 1, backgroundColor: colors.bg, padding: 24 }}>
+          <Text style={s.modalTitle}>Zdieľanie dát</Text>
+          <GlassCard>
+            <TouchableOpacity style={s.drawerItem}>
+              <Text style={s.drawerItemIcon}>🍎</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={s.drawerItemText}>Apple Health</Text>
+                <Text style={[s.subtitle, { marginTop: 2 }]}>Kroky, vzdialenosť, kalórie a tréningy</Text>
+              </View>
+              <Text style={{ color: colors.accent, fontFamily: fonts.semiBold, fontSize: 13 }}>Zapnuté</Text>
+            </TouchableOpacity>
+          </GlassCard>
+          <TouchableOpacity style={s.btnGhost} onPress={() => setShowDataSharing(false)}>
+            <Text style={s.btnGhostText}>Zatvoriť</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Device picker modal */}
       <Modal visible={phase === 'picking'} transparent animationType="slide">
@@ -543,13 +752,23 @@ const s = StyleSheet.create({
 
   container: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 48, paddingTop: 60 },
 
-  header: { alignItems: 'center', marginBottom: 32 },
-  logo: { width: 140, height: 42 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 },
+  menuBtn: { width: 40, height: 40, justifyContent: 'center', gap: 5 },
+  menuLine: { height: 2, backgroundColor: '#ffffff', borderRadius: 2, width: 24 },
+  logo: { width: 180, height: 60 },
+  logoText: { fontFamily: 'CormorantGaramond-BoldItalic', fontSize: 42, color: '#ffffff', letterSpacing: 1, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
 
   glassOuter: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
   glassInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
+  liquidOuter: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  liquidInner: { backgroundColor: 'rgba(255,255,255,0.06)', padding: 20 },
+  liquidOuterActive: { borderWidth: 2, borderColor: 'rgba(80,220,100,0.7)' },
+  liquidInnerActive: { backgroundColor: 'rgba(30,160,60,0.45)' },
   cardMargin: { marginBottom: 12 },
 
+  greetingBox: { flexDirection: 'row', alignItems: 'baseline', marginTop: -16, marginBottom: 28, paddingHorizontal: 4, flexWrap: 'wrap' },
+  greetingName: { fontFamily: fonts.bold, fontSize: 30, color: '#fff' },
+  greetingSub: { fontFamily: fonts.regular, fontSize: 20, color: '#fff', marginLeft: 8, flexShrink: 1 },
   dailySection: { width: '100%', marginBottom: 28 },
   dailyTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: 'rgba(255,255,255,0.6)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 },
   dailyRow: { flexDirection: 'row', gap: 10 },
@@ -564,7 +783,25 @@ const s = StyleSheet.create({
   sectionLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14 },
 
   padImage: { width: '100%', height: 160, marginBottom: 8 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 4 },
+  deskRow: { flexDirection: 'row', alignItems: 'center' },
+  deskImage: { width: 110, height: 90 },
+  deskInfo: { flex: 1, paddingLeft: 16 },
+  deskTextRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  deskLabel: { fontFamily: fonts.regular, fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
+  deskHeight: { fontFamily: fonts.bold, fontSize: 40, color: colors.textPrimary, lineHeight: 40 },
+  previewPadImage: { width: '100%', height: 180, marginBottom: 8 },
+  previewSpeedRow: { alignItems: 'center', paddingBottom: 4, marginTop: -16 },
+  previewSpeed: { fontFamily: fonts.bold, fontSize: 86, color: '#fff', lineHeight: 88 },
+  previewSpeedUnit: { fontFamily: fonts.regular, fontSize: 18, color: 'rgba(255,255,255,0.7)', marginTop: 0 },
+  previewSliderRow: { flexDirection: 'row', alignItems: 'center', marginTop: 16, gap: 10 },
+  previewSliderLabel: { fontFamily: fonts.semiBold, fontSize: 13, color: 'rgba(255,255,255,0.6)', width: 32, textAlign: 'center' },
+  previewSliderIcon: { fontFamily: fonts.bold, fontSize: 28, color: '#fff', width: 32, textAlign: 'center' },
+  previewStartBtn: { marginTop: 16, backgroundColor: '#E53935', borderRadius: 50, paddingVertical: 16, alignItems: 'center' },
+  previewStartBtnGreen: { backgroundColor: '#27AE60' },
+  previewStartBtnText: { fontFamily: fonts.bold, fontSize: 18, color: '#fff' },
+  previewSliderTrack: { flex: 1, height: 56, backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 28, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', paddingHorizontal: 4 },
+  previewSliderThumb: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff', alignSelf: 'center' },
+  nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 4 },
   padName: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 28, letterSpacing: -0.5 },
   editIcon: { color: colors.textSecondary, fontSize: 16 },
 
@@ -604,6 +841,15 @@ const s = StyleSheet.create({
   todayCard: { width: (SCREEN_W - 40 - 10) / 2, minHeight: 90 },
   todayValue: { fontFamily: fonts.bold, fontSize: 28, color: colors.textPrimary, marginBottom: 2 },
   todayLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
+
+  drawer: { width: 280, height: '100%', borderRightWidth: 1, borderRightColor: colors.border },
+  drawerInner: { flex: 1, backgroundColor: 'rgba(13,12,20,0.7)', padding: 24, paddingTop: 60 },
+  drawerTitle: { fontFamily: fonts.bold, fontSize: 24, color: colors.textPrimary, marginBottom: 32 },
+  drawerItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
+  drawerItemIcon: { fontSize: 20 },
+  drawerItemText: { fontFamily: fonts.semiBold, fontSize: 16, color: colors.textPrimary },
+
+  inputLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 12, marginBottom: 6 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalBox: { borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', padding: 24, paddingBottom: 44, borderWidth: 1, borderColor: colors.border },

@@ -121,51 +121,6 @@ struct BalanzaLockScreenView: View {
                          : "\(context.state.steps)", label:"kroky", big: false)
             }.padding(.horizontal, 16).padding(.vertical, 10)
 
-            HStack(spacing: 10) {
-                if #available(iOS 17.0, *) {
-                    Button(intent: SpeedDownIntent()) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                    }.buttonStyle(.plain)
-                    Button(intent: StopBeltIntent()) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "stop.fill").font(.caption.bold())
-                            Text("Zastaviť pás").font(.caption.bold())
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity).padding(.vertical, 9)
-                        .background(Color(red:0.17,green:0.16,blue:0.24))
-                        .cornerRadius(10)
-                    }.buttonStyle(.plain)
-                    Button(intent: SpeedUpIntent()) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                    }.buttonStyle(.plain)
-                } else {
-                    Link(destination: URL(string:"balanza://speed-down")!) {
-                        Image(systemName: "minus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                    }
-                    Link(destination: URL(string:"balanza://stop")!) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "stop.fill").font(.caption.bold())
-                            Text("Zastaviť pás").font(.caption.bold())
-                        }
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity).padding(.vertical, 9)
-                        .background(Color(red:0.17,green:0.16,blue:0.24))
-                        .cornerRadius(10)
-                    }
-                    Link(destination: URL(string:"balanza://speed-up")!) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 34))
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                    }
-                }
-            }.padding(.horizontal, 16).padding(.bottom, 12)
         }
         .background(Color(red:0.93,green:0.92,blue:0.96))
     }
@@ -208,33 +163,9 @@ struct BalanzaLiveActivity: Widget {
                     }.padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    HStack {
-                        if #available(iOS 17.0, *) {
-                            Button(intent: SpeedDownIntent()) {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.title3).foregroundColor(.white)
-                            }.buttonStyle(.plain)
-                            Spacer()
-                            Text("\(context.state.steps) krokov").font(.caption2).foregroundColor(.white.opacity(0.6))
-                            Spacer()
-                            Button(intent: SpeedUpIntent()) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.title3).foregroundColor(.white)
-                            }.buttonStyle(.plain)
-                        } else {
-                            Link(destination: URL(string:"balanza://speed-down")!) {
-                                Image(systemName: "minus.circle.fill")
-                                    .font(.title3).foregroundColor(.white)
-                            }
-                            Spacer()
-                            Text("\(context.state.steps) krokov").font(.caption2).foregroundColor(.white.opacity(0.6))
-                            Spacer()
-                            Link(destination: URL(string:"balanza://speed-up")!) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.title3).foregroundColor(.white)
-                            }
-                        }
-                    }.padding(.horizontal, 4)
+                    Text(String(format: "%.1f km/h  ·  %.2f km", context.state.speed, context.state.km))
+                        .font(.caption2).foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 4)
                 }
             } compactLeading: {
                 Text(context.state.steps >= 1000

@@ -17,7 +17,7 @@ import { initHealthKit } from '../health/appleHealth';
 import { colors } from '../theme';
 
 export default function ProfileScreen() {
-  const [profile, setProfile] = useState<UserProfile>({ weight: 70, height: 175, age: 30, gender: 'male' });
+  const [profile, setProfile] = useState<UserProfile>({ name: '', weight: 70, height: 175, age: 30, gender: 'male' });
   const [saved, setSaved] = useState(false);
   const [healthLinked, setHealthLinked] = useState(false);
 
