@@ -400,31 +400,22 @@ export default function ControlScreen() {
               <View style={s.hDivider} />
 
               {/* Speed control */}
-              <Text style={[s.sectionLabel, { marginTop: 16 }]}>Rýchlosť</Text>
-              <View style={s.speedRow}>
-                <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.5)}>
-                  <Text style={s.speedBtnText}>−0.5</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.1)}>
-                  <Text style={s.speedBtnText}>−0.1</Text>
-                </TouchableOpacity>
+              <View style={s.speedControl}>
+                <Text style={s.speedControlLabel}>Štartovacia rýchlosť</Text>
                 <Text style={s.speedValue}>{targetSpeed.toFixed(1)}</Text>
-                <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.1)}>
-                  <Text style={s.speedBtnText}>+0.1</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.5)}>
-                  <Text style={s.speedBtnText}>+0.5</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={s.startSpeedRow}>
-                <Text style={s.startSpeedLabel}>Štartovacia rýchlosť</Text>
-                <View style={s.startSpeedBtns}>
-                  <TouchableOpacity style={s.smallBtn} onPress={() => saveStartSpeed(Math.max(0.5, Math.round((startSpeed - 0.1) * 10) / 10))}>
-                    <Text style={s.smallBtnText}>−</Text>
+                <View style={s.speedBtnsRow}>
+                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.5)}>
+                    <Text style={s.speedBtnText}>−0.5</Text>
                   </TouchableOpacity>
-                  <Text style={s.startSpeedValue}>{startSpeed.toFixed(1)} km/h</Text>
-                  <TouchableOpacity style={s.smallBtn} onPress={() => saveStartSpeed(Math.min(6.0, Math.round((startSpeed + 0.1) * 10) / 10))}>
-                    <Text style={s.smallBtnText}>+</Text>
+                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.1)}>
+                    <Text style={s.speedBtnText}>−0.1</Text>
+                  </TouchableOpacity>
+                  <View style={{ flex: 1 }} />
+                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.1)}>
+                    <Text style={s.speedBtnText}>+0.1</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(0.5)}>
+                    <Text style={s.speedBtnText}>+0.5</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -586,10 +577,12 @@ const s = StyleSheet.create({
   liveStatLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 11, marginTop: 3 },
   vDivider: { width: 1, height: 36, backgroundColor: colors.border },
 
-  speedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  speedBtn: { backgroundColor: colors.accentLight, width: 60, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  speedControl: { marginTop: 16, alignItems: 'center' },
+  speedControlLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary, marginBottom: 4 },
+  speedValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 52, lineHeight: 58 },
+  speedBtnsRow: { flexDirection: 'row', alignItems: 'center', width: '100%', gap: 8, marginTop: 12 },
+  speedBtn: { backgroundColor: colors.accentLight, width: 64, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   speedBtnText: { fontFamily: fonts.semiBold, color: colors.textPrimary, fontSize: 13 },
-  speedValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 32, minWidth: 80, textAlign: 'center' },
 
   startSpeedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border },
   startSpeedLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 13 },

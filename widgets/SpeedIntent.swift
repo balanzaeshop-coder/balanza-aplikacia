@@ -4,7 +4,7 @@ import Foundation
 private let appGroup = "group.sk.balanza.walkingpad"
 
 @available(iOS 17.0, *)
-struct SpeedUpIntent: AppIntent {
+struct SpeedUpIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Zvýšiť rýchlosť"
     static let isDiscoverable: Bool = false
 
@@ -17,7 +17,7 @@ struct SpeedUpIntent: AppIntent {
 }
 
 @available(iOS 17.0, *)
-struct SpeedDownIntent: AppIntent {
+struct SpeedDownIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Znížiť rýchlosť"
     static let isDiscoverable: Bool = false
 
@@ -30,7 +30,7 @@ struct SpeedDownIntent: AppIntent {
 }
 
 @available(iOS 17.0, *)
-struct StopBeltIntent: AppIntent {
+struct StopBeltIntent: LiveActivityIntent {
     static let title: LocalizedStringResource = "Zastaviť pás"
     static let isDiscoverable: Bool = false
 
