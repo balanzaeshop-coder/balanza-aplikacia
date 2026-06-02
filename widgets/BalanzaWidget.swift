@@ -121,15 +121,27 @@ struct BalanzaLockScreenView: View {
                          : "\(context.state.steps)", label:"kroky", big: false)
             }.padding(.horizontal, 16).padding(.vertical, 10)
 
-            Link(destination: URL(string:"balanza://stop")!) {
-                HStack(spacing: 6) {
-                    Image(systemName: "stop.fill").font(.caption.bold())
-                    Text("Zastaviť pás").font(.caption.bold())
+            HStack(spacing: 10) {
+                Link(destination: URL(string:"balanza://speed-down")!) {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 34))
+                        .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity).padding(.vertical, 9)
-                .background(Color(red:0.17,green:0.16,blue:0.24))
-                .cornerRadius(10)
+                Link(destination: URL(string:"balanza://stop")!) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill").font(.caption.bold())
+                        Text("Zastaviť pás").font(.caption.bold())
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 9)
+                    .background(Color(red:0.17,green:0.16,blue:0.24))
+                    .cornerRadius(10)
+                }
+                Link(destination: URL(string:"balanza://speed-up")!) {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 34))
+                        .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
+                }
             }.padding(.horizontal, 16).padding(.bottom, 12)
         }
         .background(Color(red:0.93,green:0.92,blue:0.96))
@@ -159,32 +171,42 @@ struct BalanzaLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment:.leading, spacing:2) {
                         Text(String(format:"%.1f", context.state.speed)).font(.title2.bold())
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                        Text("km/h").font(.caption2).foregroundColor(.secondary)
+                            .foregroundColor(.white)
+                        Text("km/h").font(.caption2).foregroundColor(.white.opacity(0.6))
                     }.padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     VStack(alignment:.trailing, spacing:2) {
                         Text(fmtTime(context.state.seconds)).font(.headline.bold())
-                            .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-                        Text(String(format:"%.2f km", context.state.km)).font(.caption2).foregroundColor(.secondary)
+                            .foregroundColor(.white)
+                        Text(String(format:"%.2f km", context.state.km)).font(.caption2).foregroundColor(.white.opacity(0.6))
                     }.padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
-                        Text("Balanza").font(.caption.bold()).foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
+                        Link(destination: URL(string:"balanza://speed-down")!) {
+                            Image(systemName: "minus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                        }
                         Spacer()
-                        Text("\(context.state.steps) krokov").font(.caption2).foregroundColor(.secondary)
+                        Text("\(context.state.steps) krokov").font(.caption2).foregroundColor(.white.opacity(0.6))
+                        Spacer()
+                        Link(destination: URL(string:"balanza://speed-up")!) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.white)
+                        }
                     }.padding(.horizontal, 4)
                 }
             } compactLeading: {
                 Text(String(format:"%.1f", context.state.speed)).font(.caption.bold())
-                    .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
+                    .foregroundColor(.white)
             } compactTrailing: {
-                Text("km/h").font(.caption2).foregroundColor(.secondary)
+                Text("km/h").font(.caption2).foregroundColor(.white.opacity(0.7))
             } minimal: {
                 Text(String(format:"%.1f", context.state.speed)).font(.caption2.bold())
-                    .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
+                    .foregroundColor(.white)
             }
         }
     }

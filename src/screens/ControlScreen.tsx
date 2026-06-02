@@ -68,6 +68,7 @@ export default function ControlScreen() {
   const sessionDistStart = useRef(0);
   const statusRef = useRef<PadStatus | null>(null);
   const prevBeltState = useRef<number | null>(null);
+  const targetSpeedRef = useRef(startSpeed);
 
   useEffect(() => {
     Promise.all([
@@ -75,7 +76,7 @@ export default function ControlScreen() {
       AsyncStorage.getItem(DEVICE_NAME_KEY),
       AsyncStorage.getItem(DEVICE_ORIG_KEY),
     ]).then(([speed, name, orig]) => {
-      if (speed) { setTargetSpeed(parseFloat(speed)); setStartSpeed(parseFloat(speed)); }
+      if (speed) { const v = parseFloat(speed); targetSpeedRef.current = v; setTargetSpeed(v); setStartSpeed(v); }
       if (name) setCustomName(name);
       if (orig) setOrigName(orig);
     });
@@ -100,6 +101,10 @@ export default function ControlScreen() {
     const linkingSub = Linking.addEventListener('url', ({ url }) => {
       if (url.startsWith('balanza://stop') && sessionStart.current) {
         handleStop();
+      } else if (url.startsWith('balanza://speed-up')) {
+        changeSpeed(0.1);
+      } else if (url.startsWith('balanza://speed-down')) {
+        changeSpeed(-0.1);
       }
     });
     ble.onDisconnect = () => {
@@ -232,10 +237,11 @@ export default function ControlScreen() {
   }
 
   function changeSpeed(delta: number) {
-    const s = Math.min(6.0, Math.max(0.5, Math.round((targetSpeed + delta) * 10) / 10));
+    const s = Math.min(6.0, Math.max(0.5, Math.round((targetSpeedRef.current + delta) * 10) / 10));
+    targetSpeedRef.current = s;
     setTargetSpeed(s);
     AsyncStorage.setItem(START_SPEED_KEY, String(s));
-    if (running) ble.setSpeed(s);
+    if (sessionStart.current) ble.setSpeed(s);
   }
 
   async function saveStartSpeed(speed: number) {
