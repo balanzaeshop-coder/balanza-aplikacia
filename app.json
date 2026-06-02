@@ -1,25 +1,74 @@
 {
   "expo": {
-    "name": "walkingpad-app",
+    "newArchEnabled": false,
+    "name": "Balanza",
     "slug": "walkingpad-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "plugins": [
+      [
+        "react-native-widget-extension",
+        {
+          "widgetsFolder": "widgets",
+          "deploymentTarget": "16.2"
+        }
+      ],
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "Balanza číta dáta z Apple Health pre lepšie štatistiky aktivity",
+          "NSHealthUpdateUsageDescription": "Balanza zapisuje tvoje tréningy, kroky, vzdialenosť a kalórie do Apple Health"
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu"
+        }
+      ]
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "sk.balanza.walkingpad",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
+        "NSBluetoothPeripheralUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": [],
+        "com.apple.security.application-groups": ["group.sk.balanza.walkingpad"]
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E8E5EF"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "sk.balanza.walkingpad",
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "82a97529-76b0-4729-9af9-98b0a17dff21"
+      }
     }
   }
 }
