@@ -311,6 +311,7 @@ export default function ControlScreen() {
       {/* Fixed background image */}
       <Animated.View style={[s.bgContainer, { transform: [{ translateY: bgTranslateY }] }]}>
         <Image source={require('../../assets/bg_home.jpg')} style={s.bgImage} resizeMode="cover" />
+        <BlurView intensity={6} tint="default" style={StyleSheet.absoluteFill} />
         <LinearGradient
           colors={['transparent', 'rgba(13,12,20,0.5)', colors.bg]}
           style={StyleSheet.absoluteFill}
@@ -329,7 +330,17 @@ export default function ControlScreen() {
       >
         {/* Logo */}
         <View style={s.header}>
-          <Image source={require('../../assets/logo_balanza.png')} style={s.logo} resizeMode="contain" />
+          <Image source={require('../../assets/logo_new.png')} style={s.logo} resizeMode="contain" />
+        </View>
+
+        {/* Denný prehľad */}
+        <View style={s.dailySection}>
+          <Text style={s.dailyTitle}>Dnešný prehľad</Text>
+          <View style={s.dailyRow}>
+            <DailyRing label="Čas v práci" value="0" unit="h" />
+            <DailyRing label="Kroky" value={todayStats.steps.toLocaleString('sk-SK')} unit="krokov" />
+            <DailyRing label="Vzdialenosť" value={todayStats.km.toFixed(2)} unit="km" />
+          </View>
         </View>
 
         {/* Pad controls */}
@@ -511,6 +522,18 @@ export default function ControlScreen() {
   );
 }
 
+function DailyRing({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <BlurView intensity={20} tint="dark" style={s.ringOuter}>
+      <View style={s.ringInner}>
+        <Text style={s.ringValue}>{value}</Text>
+        <Text style={s.ringUnit}>{unit}</Text>
+        <Text style={s.ringLabel}>{label}</Text>
+      </View>
+    </BlurView>
+  );
+}
+
 function LiveStat({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
     <View style={s.liveStat}>
@@ -532,6 +555,15 @@ const s = StyleSheet.create({
   glassOuter: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
   glassInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
   cardMargin: { marginBottom: 12 },
+
+  dailySection: { width: '100%', marginBottom: 28 },
+  dailyTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: 'rgba(255,255,255,0.6)', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 },
+  dailyRow: { flexDirection: 'row', gap: 10 },
+  ringOuter: { flex: 1, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', aspectRatio: 0.9 },
+  ringInner: { flex: 1, backgroundColor: 'rgba(13,12,20,0.3)', alignItems: 'center', justifyContent: 'center', padding: 12 },
+  ringValue: { fontFamily: fonts.bold, fontSize: 22, color: colors.textPrimary, textAlign: 'center' },
+  ringUnit: { fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginTop: 1 },
+  ringLabel: { fontFamily: fonts.regular, fontSize: 10, color: 'rgba(255,255,255,0.4)', textAlign: 'center', marginTop: 4 },
 
   cardTitle: { fontFamily: fonts.bold, fontSize: 22, color: colors.textPrimary, marginBottom: 4 },
   subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.textSecondary },

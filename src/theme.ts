@@ -12,7 +12,7 @@ export const colors = {
   tabBarBorder: 'rgba(255,255,255,0.08)',
   active: '#C9C1E8',
   inactive: 'rgba(255,255,255,0.35)',
-  solidBg: '#E4DFEE',
+  solidBg: '#101010',
 };
 
 export const fonts = {
