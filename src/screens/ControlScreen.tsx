@@ -6,6 +6,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -26,6 +27,7 @@ import StreakCard from '../components/StreakCard';
 import { loadProfile, calcCalories } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
+import { startLiveActivity, updateLiveActivity, endLiveActivity } from '../native/liveActivity';
 import { colors } from '../theme';
 
 const ble = new WalkingPadBLE();
@@ -78,6 +80,18 @@ export default function ControlScreen() {
     ble.onStatusUpdate(s => {
       setStatus(s);
       setRunning(s.beltState === 1);
+      if (sessionStart.current) {
+        const seconds = Math.round((Date.now() - sessionStart.current) / 1000);
+        const steps   = Math.max(0, s.steps - sessionStepsStart.current);
+        const km      = Math.max(0, s.distance - sessionDistStart.current);
+        updateLiveActivity({ speed: s.speed, steps, km, seconds });
+      }
+    });
+
+    const linkingSub = Linking.addEventListener('url', ({ url }) => {
+      if (url.startsWith('balanza://stop') && sessionStart.current) {
+        handleStop();
+      }
     });
     ble.onDisconnect = () => {
       setPhase('idle');
@@ -86,7 +100,7 @@ export default function ControlScreen() {
       sessionStart.current = null;
     };
     autoConnect();
-    return () => { ble.destroy(); };
+    return () => { ble.destroy(); linkingSub.remove(); };
   }, []);
 
   async function autoConnect() {
@@ -178,10 +192,12 @@ export default function ControlScreen() {
       })(),
       runCountdown(),
     ]);
+    startLiveActivity({ speed: startSpeed, steps: 0, km: 0, seconds: 0 });
   }
 
   async function handleStop() {
     await ble.stopBelt();
+    endLiveActivity();
     if (sessionStart.current && status) {
       const duration = Math.round((Date.now() - sessionStart.current) / 1000);
       const distance = Math.max(0, status.distance - sessionDistStart.current);

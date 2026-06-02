@@ -1,6 +1,12 @@
+import ActivityKit
 import Foundation
 
-// Required by react-native-widget-extension plugin
-struct BalanzaWidgetAttributes: Codable {
-    var name: String = "Balanza"
+struct BalanzaActivityAttributes: ActivityAttributes {
+    public struct ContentState: Codable, Hashable {
+        var speed: Double
+        var steps: Int
+        var km: Double
+        var seconds: Int
+    }
+    var sessionId: String
 }

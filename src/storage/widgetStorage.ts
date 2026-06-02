@@ -16,7 +16,10 @@ export async function updateWidget(data: WidgetData): Promise<void> {
   if (Platform.OS !== 'ios') return;
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const SGP = require('react-native-shared-group-preferences').default;
+    const pkg = require('react-native-shared-group-preferences');
+    const SGP = pkg.default ?? pkg;
     await SGP.setItem(DATA_KEY, JSON.stringify(data), APP_GROUP);
-  } catch {}
+  } catch (e) {
+    console.warn('[Widget] updateWidget failed:', e);
+  }
 }

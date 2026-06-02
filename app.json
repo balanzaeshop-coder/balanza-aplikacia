@@ -32,13 +32,15 @@
         }
       ]
     ],
+    "scheme": "balanza",
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "sk.balanza.walkingpad",
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
         "NSBluetoothPeripheralUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSSupportsLiveActivities": true
       },
       "entitlements": {
         "com.apple.developer.healthkit": true,
