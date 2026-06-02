@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -35,6 +34,7 @@ const START_SPEED_KEY = 'start_speed_v1';
 const SAVED_DEVICE_KEY = 'saved_device_v1';
 const DEVICE_NAME_KEY = 'device_custom_name_v1';
 const DEVICE_ORIG_KEY = 'device_orig_name_v1';
+const SESSION_KEY = 'active_session_v1';
 
 const PAD_IMAGES: { keywords: string[]; image: any }[] = [
   { keywords: ['a1', 'plus'], image: require('../../assets/pad_a1.png') },
@@ -59,16 +59,15 @@ export default function ControlScreen() {
   const [origName, setOrigName] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
-  const [countdown, setCountdown] = useState<number | 'GO' | null>(null);
   const [ringsKey, setRingsKey] = useState(0);
 
-  const countdownAnim = useRef(new Animated.Value(1)).current;
   const sessionStart = useRef<number | null>(null);
   const sessionStepsStart = useRef(0);
   const sessionDistStart = useRef(0);
   const statusRef = useRef<PadStatus | null>(null);
   const prevBeltState = useRef<number | null>(null);
   const targetSpeedRef = useRef(startSpeed);
+  const justRestored = useRef(false);
 
   useEffect(() => {
     Promise.all([
@@ -80,10 +79,26 @@ export default function ControlScreen() {
       if (name) setCustomName(name);
       if (orig) setOrigName(orig);
     });
+    endLiveActivity();
     ble.onStatusUpdate(s => {
       statusRef.current = s;
       setStatus(s);
       setRunning(s.beltState === 1);
+
+      if (justRestored.current) {
+        justRestored.current = false;
+        if (s.beltState !== 1) {
+          endLiveActivity();
+          persistSession(s);
+          prevBeltState.current = s.beltState;
+          return;
+        }
+        const steps = Math.max(0, s.steps - sessionStepsStart.current);
+        const km = Math.max(0, s.distance - sessionDistStart.current);
+        const seconds = Math.round((Date.now() - sessionStart.current!) / 1000);
+        startLiveActivity({ speed: s.speed, steps, km, seconds });
+      }
+
       // Auto-save when belt stops itself (e.g. user steps off A1 Plus)
       if (prevBeltState.current === 1 && s.beltState !== 1 && sessionStart.current) {
         endLiveActivity();
@@ -113,6 +128,7 @@ export default function ControlScreen() {
       setRunning(false);
       sessionStart.current = null;
       prevBeltState.current = null;
+      justRestored.current = false;
     };
     autoConnect();
     return () => { ble.destroy(); linkingSub.remove(); };
@@ -125,6 +141,18 @@ export default function ControlScreen() {
     try {
       await ble.connect(savedId);
       setPhase('connected');
+      const raw = await AsyncStorage.getItem(SESSION_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (Date.now() - saved.startTime < 4 * 60 * 60 * 1000) {
+          sessionStart.current = saved.startTime;
+          sessionStepsStart.current = saved.stepsStart;
+          sessionDistStart.current = saved.distStart;
+          justRestored.current = true;
+        } else {
+          await AsyncStorage.removeItem(SESSION_KEY);
+        }
+      }
     } catch {
       setPhase('idle');
     }
@@ -173,40 +201,20 @@ export default function ControlScreen() {
     setPhase('idle');
   }
 
-  function runCountdown(): Promise<void> {
-    return new Promise(resolve => {
-      const steps: (number | 'GO')[] = [3, 2, 1, 'GO'];
-      let i = 0;
-      const tick = () => {
-        setCountdown(steps[i]);
-        countdownAnim.setValue(1.4);
-        Animated.timing(countdownAnim, { toValue: 0.8, duration: 700, useNativeDriver: true }).start(() => {
-          i++;
-          if (i < steps.length) setTimeout(tick, 800);
-          else {
-            setCountdown(null);
-            resolve();
-          }
-        });
-      };
-      tick();
-    });
-  }
-
   async function handleStart() {
     if (!sessionStart.current) {
       sessionStart.current = Date.now();
       sessionStepsStart.current = status?.steps ?? 0;
       sessionDistStart.current = status?.distance ?? 0;
+      AsyncStorage.setItem(SESSION_KEY, JSON.stringify({
+        startTime: sessionStart.current,
+        stepsStart: sessionStepsStart.current,
+        distStart: sessionDistStart.current,
+      }));
     }
-    await Promise.all([
-      (async () => {
-        await ble.setStartSpeed(startSpeed);
-        await ble.setSpeed(startSpeed);
-        await ble.startBelt();
-      })(),
-      runCountdown(),
-    ]);
+    await ble.setStartSpeed(startSpeed);
+    await ble.setSpeed(startSpeed);
+    await ble.startBelt();
     startLiveActivity({ speed: startSpeed, steps: 0, km: 0, seconds: 0 });
   }
 
@@ -217,6 +225,7 @@ export default function ControlScreen() {
     const steps = Math.max(0, s.steps - sessionStepsStart.current);
     const avgSpeed = duration > 0 ? (distance / duration) * 3600 : 0;
     sessionStart.current = null;
+    await AsyncStorage.removeItem(SESSION_KEY);
     if (duration > 5) {
       const profile = await loadProfile();
       const calories = calcCalories(profile, avgSpeed, duration);
@@ -273,15 +282,6 @@ export default function ControlScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* Countdown overlay */}
-      {countdown !== null && (
-        <View style={s.countdownOverlay}>
-          <Animated.Text style={[s.countdownText, { transform: [{ scale: countdownAnim }], color: countdown === 'GO' ? colors.accent : colors.textPrimary }]}>
-            {countdown}
-          </Animated.Text>
-        </View>
-      )}
-
       <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
         {/* Logo */}
         <Image source={require('../../assets/logo_balanza.png')} style={s.logo} resizeMode="contain" />
@@ -484,9 +484,6 @@ const s = StyleSheet.create({
   smallBtn: { backgroundColor: colors.accentLight, width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
   smallBtnText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
   startSpeedValue: { color: colors.textPrimary, fontSize: 15, fontWeight: '700', minWidth: 72, textAlign: 'center' },
-
-  countdownOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(236,234,244,0.92)', alignItems: 'center', justifyContent: 'center', zIndex: 100 },
-  countdownText: { fontSize: 120, fontWeight: '800', letterSpacing: -4 },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
   modalBox: { backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
