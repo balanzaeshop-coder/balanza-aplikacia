@@ -199,6 +199,8 @@ export default function ControlScreen() {
   const todayBaseSteps = useRef(0);
   const todayBaseKm = useRef(0);
   const todayBaseSecs = useRef(0);
+  const lastSessionSteps = useRef(0);
+  const lastSessionKm = useRef(0);
   const scrollY = useRef(new Animated.Value(0)).current;
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -271,8 +273,10 @@ export default function ControlScreen() {
         const sessionSecs  = Math.round((Date.now() - sessionStart.current) / 1000);
         const sessionSteps = Math.max(0, s.steps - sessionStepsStart.current);
         const sessionKm    = Math.max(0, s.distance - sessionDistStart.current);
-        const totalSteps   = todayBaseSteps.current + sessionSteps;
-        const totalKm      = todayBaseKm.current + sessionKm;
+        if (sessionSteps > 0) lastSessionSteps.current = sessionSteps;
+        if (sessionKm > 0) lastSessionKm.current = sessionKm;
+        const totalSteps   = todayBaseSteps.current + lastSessionSteps.current;
+        const totalKm      = todayBaseKm.current + lastSessionKm.current;
         const totalSecs    = todayBaseSecs.current + sessionSecs;
         updateLiveActivity({ speed: s.speed, steps: totalSteps, km: totalKm, seconds: totalSecs });
         AsyncStorage.setItem('live_session_stats', JSON.stringify({ steps: totalSteps, km: totalKm, seconds: totalSecs, active: true }));
@@ -383,6 +387,7 @@ export default function ControlScreen() {
       }));
     }
     await loadTodayBase();
+    setRunning(true);
     const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
     await ble.setMode(1);
     await delay(120);
@@ -406,8 +411,8 @@ export default function ControlScreen() {
   async function persistSession(s: PadStatus) {
     if (!sessionStart.current) return;
     const duration = Math.round((Date.now() - sessionStart.current) / 1000);
-    const distance = Math.max(0, s.distance - sessionDistStart.current);
-    const steps = Math.max(0, s.steps - sessionStepsStart.current);
+    const distance = Math.max(lastSessionKm.current, s.distance - sessionDistStart.current);
+    const steps = Math.max(lastSessionSteps.current, s.steps - sessionStepsStart.current);
     const avgSpeed = duration > 0 ? (distance / duration) * 3600 : 0;
     sessionStart.current = null;
     await AsyncStorage.removeItem(SESSION_KEY);
@@ -425,9 +430,11 @@ export default function ControlScreen() {
   }
 
   async function handleStop() {
+    setRunning(false);
     if (cmdInterval.current) { clearInterval(cmdInterval.current); cmdInterval.current = null; }
     await ble.stopBelt();
     endLiveActivity();
+    await AsyncStorage.removeItem('live_session_stats');
     const s = statusRef.current;
     if (s) await persistSession(s);
   }

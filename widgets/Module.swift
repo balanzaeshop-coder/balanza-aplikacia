@@ -23,7 +23,8 @@ public class ReactNativeWidgetExtensionModule: Module {
                 km:      data["km"]      as? Double ?? 0,
                 seconds: Int(data["seconds"] as? Double ?? 0)
             )
-            let content = ActivityContent(state: state, staleDate: nil)
+            let stale = Calendar.current.date(byAdding: .minute, value: 5, to: Date())
+            let content = ActivityContent(state: state, staleDate: stale)
             if let activity = try? Activity.request(attributes: attrs, content: content) {
                 self.activityId = activity.id
             }
