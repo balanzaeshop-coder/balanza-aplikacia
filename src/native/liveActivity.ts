@@ -32,3 +32,10 @@ export async function endLiveActivity(): Promise<void> {
   if (Platform.OS !== 'ios') return;
   try { await getModule()?.endActivity(); } catch (e) { console.warn('[LA] end:', e); }
 }
+
+export interface PendingCommands { delta: number; stop: boolean; }
+
+export function consumePendingCommands(): PendingCommands {
+  if (Platform.OS !== 'ios') return { delta: 0, stop: false };
+  try { return getModule()?.consumePendingCommands() ?? { delta: 0, stop: false }; } catch { return { delta: 0, stop: false }; }
+}

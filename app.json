@@ -24,13 +24,14 @@
       [
         "react-native-ble-plx",
         {
-          "isBackgroundEnabled": false,
+          "isBackgroundEnabled": true,
           "modes": [
             "central"
           ],
           "bluetoothAlwaysPermission": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "scheme": "balanza",
     "ios": {
@@ -45,7 +46,9 @@
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "com.apple.developer.healthkit.access": [],
-        "com.apple.security.application-groups": ["group.sk.balanza.walkingpad"]
+        "com.apple.security.application-groups": [
+          "group.sk.balanza.walkingpad"
+        ]
       }
     },
     "android": {

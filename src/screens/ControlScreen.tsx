@@ -1,9 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Linking,
   Modal,
@@ -17,17 +20,21 @@ import {
   Keyboard,
   View,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Device } from 'react-native-ble-plx';
 import { WalkingPadBLE, PadStatus, MODE_MANUAL } from '../bluetooth/WalkingPadBLE';
-import { saveWorkout, formatTime } from '../storage/workoutStorage';
-import TodayRings from '../components/TodayRings';
-import StreakCard from '../components/StreakCard';
+import { saveWorkout, loadWorkouts, formatTime, Workout } from '../storage/workoutStorage';
 import { loadProfile, calcCalories } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
-import { startLiveActivity, updateLiveActivity, endLiveActivity } from '../native/liveActivity';
-import { colors } from '../theme';
+import { startLiveActivity, updateLiveActivity, endLiveActivity, consumePendingCommands } from '../native/liveActivity';
+import { colors, fonts } from '../theme';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const BG_HEIGHT = SCREEN_H * 0.55;
 
 const ble = new WalkingPadBLE();
 const START_SPEED_KEY = 'start_speed_v1';
@@ -48,6 +55,14 @@ function getPadImage(origName: string): any | null {
   return null;
 }
 
+function GlassCard({ children, style }: { children: React.ReactNode; style?: any }) {
+  return (
+    <BlurView intensity={24} tint="dark" style={[s.glassOuter, style]}>
+      <View style={s.glassInner}>{children}</View>
+    </BlurView>
+  );
+}
+
 export default function ControlScreen() {
   const [phase, setPhase] = useState<'idle' | 'scanning' | 'picking' | 'connecting' | 'connected'>('idle');
   const [devices, setDevices] = useState<Device[]>([]);
@@ -59,7 +74,7 @@ export default function ControlScreen() {
   const [origName, setOrigName] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
-  const [ringsKey, setRingsKey] = useState(0);
+  const [todayStats, setTodayStats] = useState({ steps: 0, km: 0, seconds: 0, workouts: 0 });
 
   const sessionStart = useRef<number | null>(null);
   const sessionStepsStart = useRef(0);
@@ -68,6 +83,25 @@ export default function ControlScreen() {
   const prevBeltState = useRef<number | null>(null);
   const targetSpeedRef = useRef(startSpeed);
   const justRestored = useRef(false);
+  const cmdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  const bgTranslateY = scrollY.interpolate({ inputRange: [0, BG_HEIGHT], outputRange: [0, -BG_HEIGHT * 0.3], extrapolate: 'clamp' });
+  const overlayOpacity = scrollY.interpolate({ inputRange: [0, BG_HEIGHT * 0.6], outputRange: [0, 1], extrapolate: 'clamp' });
+
+  const loadTodayStats = useCallback(async () => {
+    const workouts = await loadWorkouts();
+    const today = new Date().toDateString();
+    const todayWorkouts = workouts.filter(w => new Date(w.date).toDateString() === today);
+    setTodayStats({
+      steps: todayWorkouts.reduce((a, w) => a + w.steps, 0),
+      km: todayWorkouts.reduce((a, w) => a + w.distance, 0),
+      seconds: todayWorkouts.reduce((a, w) => a + w.duration, 0),
+      workouts: todayWorkouts.length,
+    });
+  }, []);
+
+  useFocusEffect(useCallback(() => { loadTodayStats(); }, [loadTodayStats]));
 
   useEffect(() => {
     Promise.all([
@@ -99,7 +133,6 @@ export default function ControlScreen() {
         startLiveActivity({ speed: s.speed, steps, km, seconds });
       }
 
-      // Auto-save when belt stops itself (e.g. user steps off A1 Plus)
       if (prevBeltState.current === 1 && s.beltState !== 1 && sessionStart.current) {
         endLiveActivity();
         persistSession(s);
@@ -114,13 +147,9 @@ export default function ControlScreen() {
     });
 
     const linkingSub = Linking.addEventListener('url', ({ url }) => {
-      if (url.startsWith('balanza://stop') && sessionStart.current) {
-        handleStop();
-      } else if (url.startsWith('balanza://speed-up')) {
-        changeSpeed(0.1);
-      } else if (url.startsWith('balanza://speed-down')) {
-        changeSpeed(-0.1);
-      }
+      if (url.startsWith('balanza://stop') && sessionStart.current) handleStop();
+      else if (url.startsWith('balanza://speed-up')) changeSpeed(0.1);
+      else if (url.startsWith('balanza://speed-down')) changeSpeed(-0.1);
     });
     ble.onDisconnect = () => {
       setPhase('idle');
@@ -153,9 +182,7 @@ export default function ControlScreen() {
           await AsyncStorage.removeItem(SESSION_KEY);
         }
       }
-    } catch {
-      setPhase('idle');
-    }
+    } catch { setPhase('idle'); }
   }
 
   async function startScan() {
@@ -216,6 +243,11 @@ export default function ControlScreen() {
     await ble.setSpeed(startSpeed);
     await ble.startBelt();
     startLiveActivity({ speed: startSpeed, steps: 0, km: 0, seconds: 0 });
+    cmdInterval.current = setInterval(() => {
+      const { delta, stop } = consumePendingCommands();
+      if (stop && sessionStart.current) { handleStop(); return; }
+      if (delta !== 0) changeSpeed(delta);
+    }, 500);
   }
 
   async function persistSession(s: PadStatus) {
@@ -231,7 +263,7 @@ export default function ControlScreen() {
       const calories = calcCalories(profile, avgSpeed, duration);
       await saveWorkout({ duration, distance, steps, avgSpeed, calories });
       await updateStreak();
-      setRingsKey(k => k + 1);
+      loadTodayStats();
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - duration * 1000);
       syncWorkoutToHealth({ startDate, endDate, steps, distanceKm: distance, calories }).catch(() => {});
@@ -239,6 +271,7 @@ export default function ControlScreen() {
   }
 
   async function handleStop() {
+    if (cmdInterval.current) { clearInterval(cmdInterval.current); cmdInterval.current = null; }
     await ble.stopBelt();
     endLiveActivity();
     const s = statusRef.current;
@@ -260,11 +293,6 @@ export default function ControlScreen() {
     await ble.setStartSpeed(speed);
   }
 
-  function openRename() {
-    setNewName(customName);
-    setRenaming(true);
-  }
-
   async function saveName() {
     Keyboard.dismiss();
     const name = newName.trim() || origName;
@@ -273,68 +301,89 @@ export default function ControlScreen() {
     setRenaming(false);
   }
 
-  function cancelRename() {
-    Keyboard.dismiss();
-    setRenaming(false);
-  }
-
   const padImage = origName ? getPadImage(origName) : null;
+  const sessionSteps = status && sessionStart.current ? Math.max(0, status.steps - sessionStepsStart.current) : null;
+  const sessionKm = status && sessionStart.current ? Math.max(0, status.distance - sessionDistStart.current) : null;
+  const sessionSecs = sessionStart.current ? Math.round((Date.now() - sessionStart.current) / 1000) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
+      {/* Fixed background image */}
+      <Animated.View style={[s.bgContainer, { transform: [{ translateY: bgTranslateY }] }]}>
+        <Image source={require('../../assets/bg_home.jpg')} style={s.bgImage} resizeMode="cover" />
+        <LinearGradient
+          colors={['transparent', 'rgba(13,12,20,0.5)', colors.bg]}
+          style={StyleSheet.absoluteFill}
+          locations={[0, 0.5, 1]}
+        />
+      </Animated.View>
+
+      {/* Scroll-driven solid overlay */}
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.solidBg, opacity: overlayOpacity, pointerEvents: 'none' }]} />
+
+      <Animated.ScrollView
+        contentContainerStyle={s.container}
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+      >
         {/* Logo */}
-        <Image source={require('../../assets/logo_balanza.png')} style={s.logo} resizeMode="contain" />
+        <View style={s.header}>
+          <Image source={require('../../assets/logo_balanza.png')} style={s.logo} resizeMode="contain" />
+        </View>
 
-        {/* Today rings */}
-        <TodayRings refreshKey={ringsKey} />
-        <StreakCard refreshKey={ringsKey} />
-
+        {/* Pad controls */}
         {phase === 'idle' && (
-          <View style={s.idleBox}>
-            <Text style={s.subtitle}>Pripoj chodiaci pás</Text>
+          <GlassCard style={s.cardMargin}>
+            <Text style={s.cardTitle}>Chodiaci pás</Text>
+            <Text style={s.subtitle}>Pripoj chodiaci pás cez Bluetooth</Text>
             <TouchableOpacity style={s.btnPrimary} onPress={startScan}>
               <Text style={s.btnText}>Hľadať pás</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.btnSecondary} onPress={async () => {
+            <TouchableOpacity style={s.btnGhost} onPress={async () => {
               await AsyncStorage.removeItem(SAVED_DEVICE_KEY);
               await AsyncStorage.removeItem(DEVICE_NAME_KEY);
               await AsyncStorage.removeItem(DEVICE_ORIG_KEY);
               setCustomName(''); setOrigName('');
             }}>
-              <Text style={s.btnTextSecondary}>Zabudnúť uložený pás</Text>
+              <Text style={s.btnGhostText}>Zabudnúť uložený pás</Text>
             </TouchableOpacity>
-          </View>
+          </GlassCard>
         )}
 
         {(phase === 'scanning' || phase === 'connecting') && (
-          <View style={s.center}>
+          <GlassCard style={s.cardMargin}>
             <ActivityIndicator size="large" color={colors.accent} />
-            <Text style={s.info}>{phase === 'scanning' ? 'Hľadám pás...' : 'Pripájam...'}</Text>
-          </View>
+            <Text style={[s.subtitle, { marginTop: 12, textAlign: 'center' }]}>
+              {phase === 'scanning' ? 'Hľadám pás...' : 'Pripájam...'}
+            </Text>
+          </GlassCard>
         )}
 
         {phase === 'connected' && (
-          <View style={s.connectedPanel}>
-            {padImage && <Image source={padImage} style={s.padImage} resizeMode="contain" />}
-
-            <TouchableOpacity style={s.nameRow} onPress={openRename}>
+          <View style={{ width: '100%', gap: 12 }}>
+            {/* Pad name */}
+            <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
               <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
               <Text style={s.editIcon}>✎</Text>
             </TouchableOpacity>
 
-            <View style={s.statsCard}>
-              <Stat label="km/h" value={status ? status.speed.toFixed(1) : '0.0'} />
-              <View style={s.divider} />
-              <Stat label="čas" value={formatTime(status?.time ?? 0)} />
-              <View style={s.divider} />
-              <Stat label="kroky" value={String(status?.steps ?? 0)} />
-              <View style={s.divider} />
-              <Stat label="km" value={status ? status.distance.toFixed(2) : '0.00'} />
-            </View>
+            {/* Live stats */}
+            <GlassCard>
+              <View style={s.liveStatsRow}>
+                <LiveStat label="km/h" value={status ? status.speed.toFixed(1) : '—'} big />
+                <View style={s.vDivider} />
+                <LiveStat label="čas" value={formatTime(status?.time ?? 0)} />
+                <View style={s.vDivider} />
+                <LiveStat label="kroky" value={String(status?.steps ?? 0)} />
+                <View style={s.vDivider} />
+                <LiveStat label="km" value={status ? status.distance.toFixed(2) : '—'} />
+              </View>
+            </GlassCard>
 
-            <View style={s.speedCard}>
-              <Text style={s.speedLabel}>Rýchlosť</Text>
+            {/* Speed control */}
+            <GlassCard>
+              <Text style={s.sectionLabel}>Rýchlosť</Text>
               <View style={s.speedRow}>
                 <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.5)}>
                   <Text style={s.speedBtnText}>−0.5</Text>
@@ -350,8 +399,6 @@ export default function ControlScreen() {
                   <Text style={s.speedBtnText}>+0.5</Text>
                 </TouchableOpacity>
               </View>
-
-              {/* Start speed */}
               <View style={s.startSpeedRow}>
                 <Text style={s.startSpeedLabel}>Štartovacia rýchlosť</Text>
                 <View style={s.startSpeedBtns}>
@@ -364,29 +411,54 @@ export default function ControlScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
-            </View>
+            </GlassCard>
 
+            {/* Start / Stop */}
             <TouchableOpacity
               style={[s.btnPrimary, running && s.btnStop]}
               onPress={running ? handleStop : handleStart}
             >
-              <Text style={s.btnText}>{running ? 'Zastaviť' : 'Spustiť'}</Text>
+              <Text style={s.btnText}>{running ? 'Zastaviť tréning' : 'Spustiť tréning'}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={s.btnSecondary} onPress={disconnect}>
-              <Text style={s.btnTextSecondary}>Odpojiť</Text>
+            <TouchableOpacity style={s.btnGhost} onPress={disconnect}>
+              <Text style={s.btnGhostText}>Odpojiť</Text>
             </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+
+        {/* Today's stats */}
+        <View style={s.sectionHeader}>
+          <Text style={s.sectionTitle}>Dnes</Text>
+        </View>
+
+        <View style={s.todayGrid}>
+          <GlassCard style={s.todayCard}>
+            <Text style={s.todayValue}>{todayStats.steps.toLocaleString('sk-SK')}</Text>
+            <Text style={s.todayLabel}>krokov</Text>
+          </GlassCard>
+          <GlassCard style={s.todayCard}>
+            <Text style={s.todayValue}>{todayStats.km.toFixed(2)}</Text>
+            <Text style={s.todayLabel}>km</Text>
+          </GlassCard>
+          <GlassCard style={s.todayCard}>
+            <Text style={s.todayValue}>{formatTime(todayStats.seconds)}</Text>
+            <Text style={s.todayLabel}>čas</Text>
+          </GlassCard>
+          <GlassCard style={s.todayCard}>
+            <Text style={s.todayValue}>{todayStats.workouts}</Text>
+            <Text style={s.todayLabel}>tréningy</Text>
+          </GlassCard>
+        </View>
+      </Animated.ScrollView>
 
       {/* Device picker modal */}
       <Modal visible={phase === 'picking'} transparent animationType="slide">
         <View style={s.modalOverlay}>
-          <View style={s.modalBox}>
+          <BlurView intensity={40} tint="dark" style={s.modalBox}>
             <Text style={s.modalTitle}>Vyber pás</Text>
             {devices.length === 0
-              ? <Text style={s.info}>Žiadny pás nenájdený</Text>
+              ? <Text style={s.subtitle}>Žiadny pás nenájdený</Text>
               : <FlatList data={devices} keyExtractor={d => d.id} renderItem={({ item }) => (
                   <TouchableOpacity style={s.deviceRow} onPress={() => connectTo(item)}>
                     <Text style={s.deviceName}>{item.name ?? 'WalkingPad'}</Text>
@@ -394,20 +466,20 @@ export default function ControlScreen() {
                   </TouchableOpacity>
                 )} />
             }
-            <TouchableOpacity style={s.btnSecondary} onPress={() => setPhase('idle')}>
-              <Text style={s.btnTextSecondary}>Zatvoriť</Text>
+            <TouchableOpacity style={s.btnGhost} onPress={() => setPhase('idle')}>
+              <Text style={s.btnGhostText}>Zatvoriť</Text>
             </TouchableOpacity>
-          </View>
+          </BlurView>
         </View>
       </Modal>
 
       {/* Rename modal */}
-      <Modal visible={renaming} transparent animationType="slide" onRequestClose={cancelRename}>
-        <TouchableWithoutFeedback onPress={cancelRename}>
+      <Modal visible={renaming} transparent animationType="slide" onRequestClose={() => { Keyboard.dismiss(); setRenaming(false); }}>
+        <TouchableWithoutFeedback onPress={() => { Keyboard.dismiss(); setRenaming(false); }}>
           <View style={s.modalOverlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
               <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-                <View style={s.modalBox}>
+                <BlurView intensity={40} tint="dark" style={s.modalBox}>
                   <Text style={s.modalTitle}>Premenovať pás</Text>
                   <TextInput
                     style={s.input}
@@ -423,10 +495,10 @@ export default function ControlScreen() {
                   <TouchableOpacity style={s.btnPrimary} onPress={saveName}>
                     <Text style={s.btnText}>Uložiť</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={s.btnSecondary} onPress={cancelRename}>
-                    <Text style={s.btnTextSecondary}>Zrušiť</Text>
+                  <TouchableOpacity style={s.btnGhost} onPress={() => { Keyboard.dismiss(); setRenaming(false); }}>
+                    <Text style={s.btnGhostText}>Zrušiť</Text>
                   </TouchableOpacity>
-                </View>
+                </BlurView>
               </KeyboardAvoidingView>
             </TouchableWithoutFeedback>
           </View>
@@ -436,60 +508,74 @@ export default function ControlScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function LiveStat({ label, value, big }: { label: string; value: string; big?: boolean }) {
   return (
-    <View style={s.stat}>
-      <Text style={s.statValue}>{value}</Text>
-      <Text style={s.statLabel}>{label}</Text>
+    <View style={s.liveStat}>
+      <Text style={[s.liveStatValue, big && s.liveStatValueBig]}>{value}</Text>
+      <Text style={s.liveStatLabel}>{label}</Text>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flexGrow: 1, alignItems: 'center', padding: 24, paddingBottom: 40 },
-  logo: { width: 160, height: 48, marginBottom: 16, marginTop: 8 },
-  idleBox: { alignItems: 'center', marginTop: 40 },
-  subtitle: { color: colors.textSecondary, fontSize: 15, marginBottom: 32 },
-  center: { alignItems: 'center', gap: 16, marginTop: 40 },
-  info: { color: colors.textSecondary, fontSize: 15, marginTop: 12 },
+  bgContainer: { position: 'absolute', top: 0, left: 0, right: 0, height: BG_HEIGHT + 80 },
+  bgImage: { width: '100%', height: '100%' },
 
-  btnPrimary: { backgroundColor: colors.accent, paddingVertical: 16, paddingHorizontal: 56, borderRadius: 14, marginTop: 16, alignSelf: 'stretch', alignItems: 'center' },
-  btnStop: { backgroundColor: colors.danger },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '600', letterSpacing: 0.3 },
-  btnSecondary: { marginTop: 8, padding: 12, alignSelf: 'center' },
-  btnTextSecondary: { color: colors.textSecondary, fontSize: 14 },
+  container: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 48, paddingTop: 60 },
 
-  connectedPanel: { width: '100%', alignItems: 'center', gap: 4 },
-  padImage: { width: '100%', height: 160, marginBottom: 4 },
-  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  padName: { color: colors.textPrimary, fontSize: 22, fontWeight: '700' },
+  header: { alignItems: 'center', marginBottom: 32 },
+  logo: { width: 140, height: 42 },
+
+  glassOuter: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
+  glassInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
+  cardMargin: { marginBottom: 12 },
+
+  cardTitle: { fontFamily: fonts.bold, fontSize: 22, color: colors.textPrimary, marginBottom: 4 },
+  subtitle: { fontFamily: fonts.regular, fontSize: 15, color: colors.textSecondary },
+  sectionLabel: { fontFamily: fonts.semiBold, fontSize: 11, color: colors.textSecondary, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 14 },
+
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 4 },
+  padName: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 28, letterSpacing: -0.5 },
   editIcon: { color: colors.textSecondary, fontSize: 16 },
 
-  statsCard: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', width: '100%', backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-  stat: { alignItems: 'center', flex: 1 },
-  statValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  statLabel: { color: colors.textSecondary, fontSize: 11, marginTop: 4 },
-  divider: { width: 1, height: 36, backgroundColor: colors.border },
+  liveStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+  liveStat: { alignItems: 'center', flex: 1 },
+  liveStatValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 22 },
+  liveStatValueBig: { fontSize: 30 },
+  liveStatLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 11, marginTop: 3 },
+  vDivider: { width: 1, height: 36, backgroundColor: colors.border },
 
-  speedCard: { width: '100%', backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-  speedLabel: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 12 },
-  speedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  speedBtn: { backgroundColor: colors.accentLight, width: 62, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  speedBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: '700' },
-  speedValue: { color: colors.textPrimary, fontSize: 28, fontWeight: '700', minWidth: 80, textAlign: 'center' },
+  speedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  speedBtn: { backgroundColor: colors.accentLight, width: 60, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  speedBtnText: { fontFamily: fonts.semiBold, color: colors.textPrimary, fontSize: 13 },
+  speedValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 32, minWidth: 80, textAlign: 'center' },
 
   startSpeedRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border },
-  startSpeedLabel: { color: colors.textSecondary, fontSize: 13, fontWeight: '500' },
+  startSpeedLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 13 },
   startSpeedBtns: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  smallBtn: { backgroundColor: colors.accentLight, width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  smallBtnText: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  startSpeedValue: { color: colors.textPrimary, fontSize: 15, fontWeight: '700', minWidth: 72, textAlign: 'center' },
+  smallBtn: { backgroundColor: colors.accentLight, width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
+  smallBtnText: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 15 },
+  startSpeedValue: { fontFamily: fonts.semiBold, color: colors.textPrimary, fontSize: 14, minWidth: 72, textAlign: 'center' },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: colors.bgCard, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 36 },
-  modalTitle: { color: colors.textPrimary, fontSize: 20, fontWeight: '700', marginBottom: 16 },
+  btnPrimary: { backgroundColor: colors.accent, paddingVertical: 16, borderRadius: 50, marginTop: 4, alignItems: 'center' },
+  btnStop: { backgroundColor: colors.danger },
+  btnText: { fontFamily: fonts.semiBold, color: colors.bg, fontSize: 16, letterSpacing: 0.3 },
+  btnGhost: { paddingVertical: 12, alignItems: 'center' },
+  btnGhostText: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 14 },
+
+  sectionHeader: { marginTop: 36, marginBottom: 12, paddingHorizontal: 4 },
+  sectionTitle: { fontFamily: fonts.bold, fontSize: 28, color: colors.textPrimary, letterSpacing: -0.5 },
+
+  todayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  todayCard: { width: (SCREEN_W - 40 - 10) / 2, minHeight: 90 },
+  todayValue: { fontFamily: fonts.bold, fontSize: 28, color: colors.textPrimary, marginBottom: 2 },
+  todayLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalBox: { borderTopLeftRadius: 28, borderTopRightRadius: 28, overflow: 'hidden', padding: 24, paddingBottom: 44, borderWidth: 1, borderColor: colors.border },
+  modalTitle: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 22, marginBottom: 16 },
   deviceRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.border },
-  deviceName: { color: colors.textPrimary, fontSize: 16, fontWeight: '500' },
-  deviceId: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },
-  input: { backgroundColor: colors.bgCardAlt, borderRadius: 12, padding: 14, fontSize: 16, color: colors.textPrimary, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
+  deviceName: { fontFamily: fonts.semiBold, color: colors.textPrimary, fontSize: 16 },
+  deviceId: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 12, marginTop: 2 },
+  input: { backgroundColor: colors.bgCardAlt, borderRadius: 12, padding: 14, fontSize: 16, fontFamily: fonts.regular, color: colors.textPrimary, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
 });

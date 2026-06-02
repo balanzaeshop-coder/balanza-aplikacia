@@ -61,5 +61,14 @@ public class ReactNativeWidgetExtensionModule: Module {
                 WidgetCenter.shared.reloadAllTimelines()
             }
         }
+
+        Function("consumePendingCommands") { () -> [String: Any] in
+            let def = UserDefaults(suiteName: "group.sk.balanza.walkingpad")
+            let delta = def?.double(forKey: "pending_speed_delta") ?? 0
+            let stop = def?.bool(forKey: "pending_stop") ?? false
+            def?.removeObject(forKey: "pending_speed_delta")
+            def?.removeObject(forKey: "pending_stop")
+            return ["delta": delta, "stop": stop]
+        }
     }
 }
