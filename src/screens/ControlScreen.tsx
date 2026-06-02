@@ -22,8 +22,10 @@ import { Device } from 'react-native-ble-plx';
 import { WalkingPadBLE, PadStatus, MODE_MANUAL } from '../bluetooth/WalkingPadBLE';
 import { saveWorkout, formatTime } from '../storage/workoutStorage';
 import TodayRings from '../components/TodayRings';
+import StreakCard from '../components/StreakCard';
 import { loadProfile, calcCalories } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
+import { updateStreak } from '../storage/streakStorage';
 import { colors } from '../theme';
 
 const ble = new WalkingPadBLE();
@@ -189,6 +191,7 @@ export default function ControlScreen() {
         const profile = await loadProfile();
         const calories = calcCalories(profile, avgSpeed, duration);
         await saveWorkout({ duration, distance, steps, avgSpeed, calories });
+        await updateStreak();
         setRingsKey(k => k + 1);
         const endDate = new Date();
         const startDate = new Date(endDate.getTime() - duration * 1000);
@@ -249,6 +252,7 @@ export default function ControlScreen() {
 
         {/* Today rings */}
         <TodayRings refreshKey={ringsKey} />
+        <StreakCard refreshKey={ringsKey} />
 
         {phase === 'idle' && (
           <View style={s.idleBox}>

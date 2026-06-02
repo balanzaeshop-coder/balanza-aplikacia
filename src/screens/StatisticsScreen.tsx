@@ -115,8 +115,23 @@ export default function StatisticsScreen() {
 
   const metricLabel = metric === 'km' ? 'km' : metric === 'kroky' ? 'kroky (tisíce)' : metric === 'cas' ? 'minúty' : 'kcal';
 
+  const allKm    = workouts.reduce((s, w) => s + w.distance, 0);
+  const allSteps = workouts.reduce((s, w) => s + w.steps, 0);
+  const allTime  = workouts.reduce((s, w) => s + w.duration, 0);
+  const allKcal  = workouts.reduce((s, w) => s + (w.calories ?? 0), 0);
+
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+
+      <View style={s.lifetimeCard}>
+        <Text style={s.lifetimeTitle}>Celkovo od začiatku</Text>
+        <View style={s.lifetimeRow}>
+          <LifetimeStat icon="🏃" value={String(workouts.length)} label="tréningov" />
+          <LifetimeStat icon="🗺️" value={allKm.toFixed(0)} label="km" />
+          <LifetimeStat icon="⏱️" value={Math.round(allTime / 3600).toFixed(0)} label="hodín" />
+          <LifetimeStat icon="🔥" value={String(allKcal)} label="kcal" />
+        </View>
+      </View>
 
       <View style={s.segmentRow}>
         {(['7d', '30d'] as Period[]).map(p => (
@@ -198,6 +213,16 @@ export default function StatisticsScreen() {
   );
 }
 
+function LifetimeStat({ icon, value, label }: { icon: string; value: string; label: string }) {
+  return (
+    <View style={s.lifetimeStat}>
+      <Text style={s.lifetimeIcon}>{icon}</Text>
+      <Text style={s.lifetimeValue}>{value}</Text>
+      <Text style={s.lifetimeLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
     <View style={s.summaryCard}>
@@ -219,6 +244,14 @@ function CardStat({ label, value }: { label: string; value: string }) {
 const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.bg },
   content: { padding: 16, paddingBottom: 48 },
+
+  lifetimeCard: { backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  lifetimeTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 16 },
+  lifetimeRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  lifetimeStat: { alignItems: 'center', gap: 4 },
+  lifetimeIcon: { fontSize: 22 },
+  lifetimeValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
+  lifetimeLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
 
   segmentRow: { flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
   segment: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
