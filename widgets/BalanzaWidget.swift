@@ -142,9 +142,9 @@ private struct LiveStat: View {
     var body: some View {
         VStack(spacing: 2) {
             Text(value)
-                .font(big ? .system(size:26,weight:.800) : .system(size:18,weight:.700))
+                .font(big ? .system(size:26,weight:.heavy) : .system(size:18,weight:.bold))
                 .foregroundColor(Color(red:0.17,green:0.16,blue:0.24))
-            Text(label).font(.system(size:10,weight:.600)).foregroundColor(.secondary)
+            Text(label).font(.system(size:10,weight:.semibold)).foregroundColor(.secondary)
         }.frame(maxWidth: .infinity)
     }
 }
