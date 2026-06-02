@@ -170,9 +170,11 @@ struct BalanzaLiveActivity: Widget {
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     VStack(alignment:.leading, spacing:2) {
-                        Text(String(format:"%.1f", context.state.speed)).font(.title2.bold())
+                        Text(context.state.steps >= 1000
+                             ? String(format:"%.1fk", Double(context.state.steps)/1000)
+                             : "\(context.state.steps)").font(.title2.bold())
                             .foregroundColor(.white)
-                        Text("km/h").font(.caption2).foregroundColor(.white.opacity(0.6))
+                        Text("krokov").font(.caption2).foregroundColor(.white.opacity(0.6))
                     }.padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -200,12 +202,16 @@ struct BalanzaLiveActivity: Widget {
                     }.padding(.horizontal, 4)
                 }
             } compactLeading: {
-                Text(String(format:"%.1f", context.state.speed)).font(.caption.bold())
+                Text(context.state.steps >= 1000
+                     ? String(format:"%.1fk", Double(context.state.steps)/1000)
+                     : "\(context.state.steps)").font(.caption.bold())
                     .foregroundColor(.white)
             } compactTrailing: {
-                Text("km/h").font(.caption2).foregroundColor(.white.opacity(0.7))
+                Text("krokov").font(.caption2).foregroundColor(.white.opacity(0.7))
             } minimal: {
-                Text(String(format:"%.1f", context.state.speed)).font(.caption2.bold())
+                Text(context.state.steps >= 1000
+                     ? String(format:"%.1fk", Double(context.state.steps)/1000)
+                     : "\(context.state.steps)").font(.caption2.bold())
                     .foregroundColor(.white)
             }
         }
