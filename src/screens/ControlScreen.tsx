@@ -373,18 +373,20 @@ export default function ControlScreen() {
 
         {phase === 'connected' && (
           <View style={{ width: '100%', gap: 12 }}>
-            {/* Pad image */}
-            {padImage && <Image source={padImage} style={s.padImage} resizeMode="contain" />}
-
-            {/* Pad name */}
-            <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
-              <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
-              <Text style={s.editIcon}>✎</Text>
-            </TouchableOpacity>
-
-            {/* Live stats */}
             <GlassCard>
-              <View style={s.liveStatsRow}>
+              {/* Pad image */}
+              {padImage && (
+                <Image source={padImage} style={s.padImage} resizeMode="contain" />
+              )}
+
+              {/* Pad name */}
+              <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
+                <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
+                <Text style={s.editIcon}>✎</Text>
+              </TouchableOpacity>
+
+              {/* Live stats */}
+              <View style={[s.liveStatsRow, s.statsSection]}>
                 <LiveStat label="km/h" value={status ? status.speed.toFixed(1) : '—'} big />
                 <View style={s.vDivider} />
                 <LiveStat label="čas" value={formatTime(status?.time ?? 0)} />
@@ -393,11 +395,12 @@ export default function ControlScreen() {
                 <View style={s.vDivider} />
                 <LiveStat label="km" value={status ? status.distance.toFixed(2) : '—'} />
               </View>
-            </GlassCard>
 
-            {/* Speed control */}
-            <GlassCard>
-              <Text style={s.sectionLabel}>Rýchlosť</Text>
+              {/* Divider */}
+              <View style={s.hDivider} />
+
+              {/* Speed control */}
+              <Text style={[s.sectionLabel, { marginTop: 16 }]}>Rýchlosť</Text>
               <View style={s.speedRow}>
                 <TouchableOpacity style={s.speedBtn} onPress={() => changeSpeed(-0.5)}>
                   <Text style={s.speedBtnText}>−0.5</Text>
@@ -425,19 +428,19 @@ export default function ControlScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Start / Stop */}
+              <TouchableOpacity
+                style={[s.btnPrimary, { marginTop: 20 }, running && s.btnStop]}
+                onPress={running ? handleStop : handleStart}
+              >
+                <Text style={s.btnText}>{running ? 'Zastaviť tréning' : 'Spustiť tréning'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={s.btnGhost} onPress={disconnect}>
+                <Text style={s.btnGhostText}>Odpojiť</Text>
+              </TouchableOpacity>
             </GlassCard>
-
-            {/* Start / Stop */}
-            <TouchableOpacity
-              style={[s.btnPrimary, running && s.btnStop]}
-              onPress={running ? handleStop : handleStart}
-            >
-              <Text style={s.btnText}>{running ? 'Zastaviť tréning' : 'Spustiť tréning'}</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={s.btnGhost} onPress={disconnect}>
-              <Text style={s.btnGhostText}>Odpojiť</Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -575,6 +578,8 @@ const s = StyleSheet.create({
   editIcon: { color: colors.textSecondary, fontSize: 16 },
 
   liveStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+  statsSection: { marginTop: 16 },
+  hDivider: { height: 1, backgroundColor: colors.border, marginTop: 16 },
   liveStat: { alignItems: 'center', flex: 1 },
   liveStatValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 22 },
   liveStatValueBig: { fontSize: 30 },
