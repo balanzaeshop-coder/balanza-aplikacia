@@ -19,9 +19,9 @@ public class ReactNativeWidgetExtensionModule: Module {
             let attrs = BalanzaActivityAttributes(sessionId: UUID().uuidString)
             let state = BalanzaActivityAttributes.ContentState(
                 speed:   data["speed"]   as? Double ?? 0,
-                steps:   data["steps"]   as? Int    ?? 0,
+                steps:   Int(data["steps"]   as? Double ?? 0),
                 km:      data["km"]      as? Double ?? 0,
-                seconds: data["seconds"] as? Int    ?? 0
+                seconds: Int(data["seconds"] as? Double ?? 0)
             )
             let content = ActivityContent(state: state, staleDate: nil)
             if let activity = try? Activity.request(attributes: attrs, content: content) {
@@ -36,9 +36,9 @@ public class ReactNativeWidgetExtensionModule: Module {
             else { return }
             let state = BalanzaActivityAttributes.ContentState(
                 speed:   data["speed"]   as? Double ?? 0,
-                steps:   data["steps"]   as? Int    ?? 0,
+                steps:   Int(data["steps"]   as? Double ?? 0),
                 km:      data["km"]      as? Double ?? 0,
-                seconds: data["seconds"] as? Int    ?? 0
+                seconds: Int(data["seconds"] as? Double ?? 0)
             )
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
