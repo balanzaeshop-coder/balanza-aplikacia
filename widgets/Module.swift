@@ -1,6 +1,7 @@
 import ActivityKit
 import ExpoModulesCore
 import Foundation
+import WidgetKit
 
 public class ReactNativeWidgetExtensionModule: Module {
     private var activityId: String?
@@ -53,6 +54,12 @@ public class ReactNativeWidgetExtensionModule: Module {
         Function("areActivitiesEnabled") { () -> Bool in
             guard #available(iOS 16.2, *) else { return false }
             return ActivityAuthorizationInfo().areActivitiesEnabled
+        }
+
+        Function("reloadTimelines") { () in
+            if #available(iOS 14.0, *) {
+                WidgetCenter.shared.reloadAllTimelines()
+            }
         }
     }
 }

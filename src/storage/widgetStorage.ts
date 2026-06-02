@@ -15,10 +15,11 @@ export interface WidgetData {
 export async function updateWidget(data: WidgetData): Promise<void> {
   if (Platform.OS !== 'ios') return;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const pkg = require('react-native-shared-group-preferences');
     const SGP = pkg.default ?? pkg;
     await SGP.setItem(DATA_KEY, JSON.stringify(data), APP_GROUP);
+    const { requireNativeModule } = require('expo-modules-core');
+    requireNativeModule('ReactNativeWidgetExtension').reloadTimelines();
   } catch (e) {
     console.warn('[Widget] updateWidget failed:', e);
   }
