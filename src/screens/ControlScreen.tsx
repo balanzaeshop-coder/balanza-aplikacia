@@ -34,6 +34,8 @@ import { loadProfile, saveProfile, calcCalories, UserProfile } from '../storage/
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
 import { startLiveActivity, updateLiveActivity, endLiveActivity, consumePendingCommands } from '../native/liveActivity';
+import { auth } from '../firebase/config';
+import { uploadWorkout, uploadStreak } from '../firebase/sync';
 import { colors, fonts } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -537,11 +539,20 @@ export default function ControlScreen() {
     if (duration > 5) {
       const profile = await loadProfile();
       const calories = calcCalories(profile, avgSpeed, duration);
-      await saveWorkout({ duration, distance, steps, avgSpeed, calories });
+      const workout = { duration, distance, steps, avgSpeed, calories };
+      await saveWorkout(workout);
       await updateStreak();
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - duration * 1000);
       syncWorkoutToHealth({ startDate, endDate, steps, distanceKm: distance, calories }).catch(() => {});
+      // Silent background sync to Firebase
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        const all = await loadWorkouts();
+        const saved = all[0]; // newest is first
+        if (saved) uploadWorkout(uid, saved).catch(() => {});
+        uploadStreak(uid).catch(() => {});
+      }
     }
   }
 

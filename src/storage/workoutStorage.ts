@@ -12,13 +12,12 @@ export interface Workout {
 
 const KEY = 'workouts_v1';
 
-export async function saveWorkout(w: Omit<Workout, 'id' | 'date'>): Promise<void> {
+export async function saveWorkout(w: Omit<Workout, 'id' | 'date'> | Workout, keepExisting = false): Promise<void> {
   const all = await loadWorkouts();
-  const workout: Workout = {
-    ...w,
-    id: Date.now().toString(),
-    date: new Date().toISOString(),
-  };
+  const workout: Workout = keepExisting && 'id' in w && 'date' in w
+    ? (w as Workout)
+    : { ...(w as Omit<Workout, 'id' | 'date'>), id: Date.now().toString(), date: new Date().toISOString() };
+  if (keepExisting && all.find(x => x.id === workout.id)) return;
   await AsyncStorage.setItem(KEY, JSON.stringify([workout, ...all]));
 }
 

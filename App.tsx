@@ -1,5 +1,10 @@
 import 'react-native-gesture-handler';
 import React, { useEffect, useRef, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from './src/firebase/config';
+import { fullSync, SyncStep } from './src/firebase/sync';
+import AuthScreen from './src/screens/AuthScreen';
+import SyncOverlay from './src/components/SyncOverlay';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { initHealthKit } from './src/health/appleHealth';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -154,6 +159,9 @@ const ob = StyleSheet.create({
 
 export default function App() {
   const [onboardingDone, setOnboardingDone] = useState<boolean | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [uid, setUid] = useState<string | null>(null);
+  const [syncStep, setSyncStep] = useState<SyncStep | null>(null);
   const [fontsLoaded] = useFonts({
     'CormorantGaramond-Regular': require('./assets/fonts/CormorantGaramond-Regular.ttf'),
     'CormorantGaramond-SemiBold': require('./assets/fonts/CormorantGaramond-SemiBold.ttf'),
@@ -164,6 +172,21 @@ export default function App() {
   useEffect(() => {
     initHealthKit();
     loadProfile().then(p => setOnboardingDone(!!p.name));
+    const unsub = onAuthStateChanged(auth, async user => {
+      if (user) {
+        setUid(user.uid);
+        setAuthReady(true);
+        setSyncStep('profile');
+        await fullSync(user.uid, step => setSyncStep(step));
+        await new Promise(r => setTimeout(r, 600));
+        setSyncStep(null);
+        loadProfile().then(p => setOnboardingDone(!!p.name));
+      } else {
+        setUid(null);
+        setAuthReady(true);
+      }
+    });
+    return unsub;
   }, []);
 
   const navRef = useNavigationContainerRef();
@@ -182,7 +205,13 @@ export default function App() {
     },
   })).current;
 
-  if (!fontsLoaded || onboardingDone === null) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (!fontsLoaded || !authReady) return <View style={{ flex: 1, backgroundColor: colors.bg }} />;
+  if (!uid) return <AuthScreen onDone={() => {}} />;
+  if (syncStep || onboardingDone === null) return (
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+      {syncStep && <SyncOverlay step={syncStep} />}
+    </View>
+  );
   if (!onboardingDone) return <OnboardingScreen onDone={() => setOnboardingDone(true)} />;
 
   return (
