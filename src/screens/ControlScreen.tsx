@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -24,11 +24,10 @@ import {
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Device } from 'react-native-ble-plx';
 import { WalkingPadBLE, PadStatus, MODE_MANUAL } from '../bluetooth/WalkingPadBLE';
-import { saveWorkout, loadWorkouts, formatTime } from '../storage/workoutStorage';
+import { saveWorkout, formatTime } from '../storage/workoutStorage';
 import { loadProfile, saveProfile, calcCalories, UserProfile } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
@@ -181,8 +180,6 @@ export default function ControlScreen() {
   const [origName, setOrigName] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
-  const [todayStats, setTodayStats] = useState({ steps: 0, km: 0, seconds: 0, workouts: 0 });
-  const [greetingIndex, setGreetingIndex] = useState(0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showDataSharing, setShowDataSharing] = useState(false);
@@ -198,12 +195,6 @@ export default function ControlScreen() {
   const targetSpeedRef = useRef(startSpeed);
   const justRestored = useRef(false);
   const cmdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [, forceUpdate] = useState(0);
-  const todayBaseSteps = useRef(0);
-  const todayBaseKm = useRef(0);
-  const todayBaseSecs = useRef(0);
   const lastSessionSteps = useRef(0);
   const lastSessionKm = useRef(0);
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -211,27 +202,6 @@ export default function ControlScreen() {
 
   const bgTranslateY = scrollY.interpolate({ inputRange: [0, BG_HEIGHT], outputRange: [0, -BG_HEIGHT * 0.3], extrapolate: 'clamp' });
   const overlayOpacity = scrollY.interpolate({ inputRange: [0, BG_HEIGHT * 0.6], outputRange: [0, 1], extrapolate: 'clamp' });
-
-  const greetings = (name: string, steps: number, km: number, hours: number) => [
-    `poďme sa hýbať!`,
-    `dnes si ušiel ${steps.toLocaleString('sk-SK')} krokov.`,
-    `dnes si prešiel ${km.toFixed(2)} km.`,
-    `dnes si pracoval ${hours.toFixed(1)} hodín.`,
-  ];
-
-  const loadTodayStats = useCallback(async () => {
-    const workouts = await loadWorkouts();
-    const today = new Date().toDateString();
-    const todayWorkouts = workouts.filter(w => new Date(w.date).toDateString() === today);
-    setTodayStats({
-      steps: todayWorkouts.reduce((a, w) => a + w.steps, 0),
-      km: todayWorkouts.reduce((a, w) => a + w.distance, 0),
-      seconds: todayWorkouts.reduce((a, w) => a + w.duration, 0),
-      workouts: todayWorkouts.length,
-    });
-  }, []);
-
-  useFocusEffect(useCallback(() => { loadTodayStats(); }, [loadTodayStats]));
 
   useEffect(() => {
     Promise.all([
@@ -247,8 +217,6 @@ export default function ControlScreen() {
       setProfile(p);
       setProfileForm({ name: p.name, weight: String(p.weight), height: String(p.height), age: String(p.age) });
     });
-    const gi = setInterval(() => setGreetingIndex(i => i + 1), 20 * 60 * 1000);
-
     endLiveActivity();
 
     ble.onStatusUpdate(s => {
@@ -288,13 +256,6 @@ export default function ControlScreen() {
         if (sessionSteps > 0) lastSessionSteps.current = sessionSteps;
         if (sessionKm > 0) lastSessionKm.current = sessionKm;
         updateLiveActivity({ speed: s.speed, steps: lastSessionSteps.current, km: lastSessionKm.current, seconds: sessionSecs });
-        AsyncStorage.setItem('live_session_stats', JSON.stringify({
-          active: true,
-          speed: s.speed,
-          sessionSteps: lastSessionSteps.current,
-          sessionKm: lastSessionKm.current,
-          sessionSecs,
-        }));
       }
     });
 
@@ -325,7 +286,6 @@ export default function ControlScreen() {
     autoConnect();
 
     return () => {
-      clearInterval(gi);
       linkingSub.remove();
     };
   }, []);
@@ -348,7 +308,6 @@ export default function ControlScreen() {
           sessionStepsStart.current = saved.stepsStart;
           sessionDistStart.current = saved.distStart;
           justRestored.current = true;
-          await loadTodayBase();
         } else {
           await AsyncStorage.removeItem(SESSION_KEY);
         }
@@ -407,15 +366,6 @@ export default function ControlScreen() {
     phaseRef.current = 'idle';
   }
 
-  async function loadTodayBase() {
-    const all = await loadWorkouts();
-    const today = new Date().toDateString();
-    const todayW = all.filter(w => new Date(w.date).toDateString() === today);
-    todayBaseSteps.current = todayW.reduce((s, w) => s + w.steps, 0);
-    todayBaseKm.current = todayW.reduce((s, w) => s + w.distance, 0);
-    todayBaseSecs.current = todayW.reduce((s, w) => s + w.duration, 0);
-  }
-
   async function handleStart() {
     if (!sessionStart.current) {
       sessionStart.current = Date.now();
@@ -427,25 +377,11 @@ export default function ControlScreen() {
         distStart: 0,
       }));
     }
-    await loadTodayBase();
     setRunning(true);
     await ble.setStartSpeed(targetSpeedRef.current);
     await ble.setSpeed(targetSpeedRef.current);
     await ble.startBelt();
     startLiveActivity({ speed: targetSpeedRef.current, steps: 0, km: 0, seconds: 0 });
-    timerInterval.current = setInterval(() => forceUpdate(n => n + 1), 1000);
-    heartbeatInterval.current = setInterval(() => {
-      if (!sessionStart.current) return;
-      const sessionSecs = Math.round((Date.now() - sessionStart.current) / 1000);
-      const speed = statusRef.current?.speed ?? targetSpeedRef.current;
-      AsyncStorage.setItem('live_session_stats', JSON.stringify({
-        active: true,
-        speed,
-        sessionSteps: lastSessionSteps.current,
-        sessionKm: lastSessionKm.current,
-        sessionSecs,
-      }));
-    }, 500);
     cmdInterval.current = setInterval(() => {
       const { delta, stop } = consumePendingCommands();
       if (stop && sessionStart.current) { handleStop(); return; }
@@ -467,7 +403,6 @@ export default function ControlScreen() {
       const calories = calcCalories(profile, avgSpeed, duration);
       await saveWorkout({ duration, distance, steps, avgSpeed, calories });
       await updateStreak();
-      loadTodayStats();
       const endDate = new Date();
       const startDate = new Date(endDate.getTime() - duration * 1000);
       syncWorkoutToHealth({ startDate, endDate, steps, distanceKm: distance, calories }).catch(() => {});
@@ -477,8 +412,6 @@ export default function ControlScreen() {
   async function handleStop() {
     setRunning(false);
     if (cmdInterval.current) { clearInterval(cmdInterval.current); cmdInterval.current = null; }
-    if (heartbeatInterval.current) { clearInterval(heartbeatInterval.current); heartbeatInterval.current = null; }
-    if (timerInterval.current) { clearInterval(timerInterval.current); timerInterval.current = null; }
     try { await ble.stopBelt(); } catch {}
     endLiveActivity();
     await AsyncStorage.removeItem('live_session_stats');
@@ -517,9 +450,6 @@ export default function ControlScreen() {
   }
 
   const padImage = origName ? getPadImage(origName) : null;
-  const sessionSteps = status && sessionStart.current ? Math.max(0, status.steps - sessionStepsStart.current) : null;
-  const sessionKm = status && sessionStart.current ? Math.max(0, status.distance - sessionDistStart.current) : null;
-  const sessionSecs = sessionStart.current ? Math.round((Date.now() - sessionStart.current) / 1000) : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -557,9 +487,7 @@ export default function ControlScreen() {
         {profile.name ? (
           <View style={s.greetingBox}>
             <Text style={s.greetingName}>Ahoj, {profile.name}</Text>
-            <Text style={s.greetingSub}>
-              {greetings(profile.name, todayStats.steps, todayStats.km, todayStats.seconds / 3600)[greetingIndex % greetings(profile.name, todayStats.steps, todayStats.km, todayStats.seconds / 3600).length]}
-            </Text>
+            <Text style={s.greetingSub}>poďme sa hýbať!</Text>
           </View>
         ) : null}
 
@@ -618,17 +546,17 @@ export default function ControlScreen() {
               >
                 <Text style={s.previewStartBtnText}>{running ? 'Zastaviť' : 'Spustiť'}</Text>
               </TouchableOpacity>
-              {running && (
+              {running && status && (
                 <>
                   <View style={s.hDivider} />
-                  <View style={[s.liveStatsRow, { marginTop: 16 }]}>
-                    <LiveStat label="kroky" value={(sessionSteps ?? 0).toLocaleString('sk-SK')} />
+                  <View style={s.liveStatsRow}>
+                    <LiveStat label="km/h" value={status.speed.toFixed(1).replace('.', ',')} />
                     <View style={s.vDivider} />
-                    <LiveStat label="km" value={(sessionKm ?? 0).toFixed(2)} />
+                    <LiveStat label="kroky" value={status.steps.toLocaleString('sk-SK')} />
                     <View style={s.vDivider} />
-                    <LiveStat label="čas" value={formatTime(sessionSecs ?? 0)} />
+                    <LiveStat label="km" value={status.distance.toFixed(2)} />
                     <View style={s.vDivider} />
-                    <LiveStat label="kcal" value={String(calcCalories(profile, status?.speed ?? targetSpeed, sessionSecs ?? 0))} />
+                    <LiveStat label="čas" value={formatTime(status.time)} />
                   </View>
                 </>
               )}
