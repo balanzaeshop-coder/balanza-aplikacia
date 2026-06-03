@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -9,18 +9,11 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import Svg, { Circle } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
 import { BarChart } from 'react-native-chart-kit';
 import { loadWorkouts, deleteWorkout, formatTime, formatDate, Workout } from '../storage/workoutStorage';
-import { loadProfile } from '../storage/profileStorage';
 import { colors, fonts } from '../theme';
 
-const SCORE = 80;
-const RING_SIZE = 90;
-const STROKE = 8;
-const RADIUS = (RING_SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHART_WIDTH = SCREEN_WIDTH - 32;
 
@@ -80,25 +73,6 @@ const chartConfig = {
   propsForLabels: { fontFamily: fonts.regular, fontSize: 11 },
 };
 
-function ScoreRing({ score }: { score: number }) {
-  const progress = CIRCUMFERENCE * (1 - score / 100);
-  return (
-    <View style={{ width: RING_SIZE, height: RING_SIZE, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={RING_SIZE} height={RING_SIZE} style={{ position: 'absolute' }}>
-        <Circle cx={RING_SIZE/2} cy={RING_SIZE/2} r={RADIUS} stroke="rgba(255,255,255,0.15)" strokeWidth={STROKE} fill="none" />
-        <Circle
-          cx={RING_SIZE/2} cy={RING_SIZE/2} r={RADIUS}
-          stroke="#fff" strokeWidth={STROKE} fill="none"
-          strokeDasharray={`${CIRCUMFERENCE}`}
-          strokeDashoffset={progress}
-          strokeLinecap="round"
-          rotation="-90" originX={RING_SIZE/2} originY={RING_SIZE/2}
-        />
-      </Svg>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 26, color: '#fff' }}>{score}</Text>
-    </View>
-  );
-}
 
 function StatCard({ icon, value, label, sub }: { icon: string; value: string; label: string; sub?: string }) {
   return (
@@ -113,16 +87,6 @@ function StatCard({ icon, value, label, sub }: { icon: string; value: string; la
   );
 }
 
-function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
-  return (
-    <View style={s.breakItem}>
-      <View style={[s.breakDot, { backgroundColor: color }]} />
-      <Text style={s.breakLabel}>{label}</Text>
-      <Text style={s.breakValue}>{value}</Text>
-      <Text style={s.breakPct}>{pct}</Text>
-    </View>
-  );
-}
 
 function CardStat({ label, value }: { label: string; value: string }) {
   return (
@@ -136,11 +100,8 @@ function CardStat({ label, value }: { label: string; value: string }) {
 export default function StatisticsScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [userName, setUserName] = useState('');
   const [period, setPeriod] = useState<Period>('7d');
   const [metric, setMetric] = useState<Metric>('kroky');
-
-  useEffect(() => { loadProfile().then(p => setUserName(p.name)); }, []);
 
   useFocusEffect(
     useCallback(() => { loadWorkouts().then(setWorkouts); }, [])
@@ -184,34 +145,6 @@ export default function StatisticsScreen() {
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
-
-      {/* Score card */}
-      <BlurView intensity={50} tint="dark" style={s.glassCard}>
-        <View style={s.scoreInner}>
-          <ScoreRing score={SCORE} />
-          <View style={s.scoreRight}>
-            <Text style={s.scoreTitle}>Skóre dňa · {SCORE}/100</Text>
-            <Text style={s.scoreDesc}>{userName ? `${userName}, tvoje` : 'Tvoje'} dnešné skóre pracovného dňa je {SCORE} bodov.</Text>
-          </View>
-        </View>
-      </BlurView>
-
-      {/* Breakdown card */}
-      <BlurView intensity={50} tint="dark" style={s.glassCard}>
-        <View style={[s.scoreInner, { flexDirection: 'column', gap: 16 }]}>
-          <Text style={s.scoreTitle}>Rozloženie dňa</Text>
-          <View style={s.breakBar}>
-            <View style={[s.breakSegment, { flex: 3, backgroundColor: '#5B8DEF', borderTopLeftRadius: 8, borderBottomLeftRadius: 8 }]} />
-            <View style={[s.breakSegment, { flex: 4, backgroundColor: '#27AE60' }]} />
-            <View style={[s.breakSegment, { flex: 3, backgroundColor: '#E67E22', borderTopRightRadius: 8, borderBottomRightRadius: 8 }]} />
-          </View>
-          <View style={s.breakLegend}>
-            <BreakItem color="#5B8DEF" label="Sedenie" value="3h" pct="30%" />
-            <BreakItem color="#27AE60" label="Státie"  value="4h" pct="40%" />
-            <BreakItem color="#E67E22" label="Kráčanie" value="3h" pct="30%" />
-          </View>
-        </View>
-      </BlurView>
 
       {/* Today's stats */}
       <Text style={s.sectionHeading}>Dnes</Text>
@@ -347,20 +280,6 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 110 },
 
   glassCard: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 16 },
-  scoreInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, flexDirection: 'row', alignItems: 'center', gap: 20 },
-  scoreRight: { flex: 1 },
-  scoreTitle: { fontFamily: fonts.bold, fontSize: 18, color: '#fff', marginBottom: 8 },
-  scoreDesc: { fontFamily: fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 20 },
-
-  breakBar: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 },
-  breakSegment: { height: '100%' },
-  breakLegend: { flexDirection: 'row', justifyContent: 'space-between' },
-  breakItem: { alignItems: 'center', gap: 4 },
-  breakDot: { width: 10, height: 10, borderRadius: 5 },
-  breakLabel: { fontFamily: fonts.semiBold, fontSize: 12, color: 'rgba(255,255,255,0.8)' },
-  breakValue: { fontFamily: fonts.bold, fontSize: 16, color: '#fff' },
-  breakPct: { fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)' },
-
   sectionHeading: { fontFamily: fonts.bold, fontSize: 22, color: '#fff', marginBottom: 12, marginTop: 4 },
 
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },

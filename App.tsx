@@ -10,7 +10,6 @@ import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import ControlScreen from './src/screens/ControlScreen';
 import StatisticsScreen from './src/screens/StatisticsScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
-import GoalsScreen from './src/screens/GoalsScreen';
 import ShopScreen from './src/screens/ShopScreen';
 import { loadProfile, saveProfile } from './src/storage/profileStorage';
 import { colors, fonts } from './src/theme';
@@ -21,7 +20,6 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const TABS = [
   { name: 'Ovládanie', icon: '▶', label: 'Ovládanie' },
   { name: 'Štatistiky', icon: '📊', label: 'Čísla' },
-  { name: 'Ciele', icon: '🎯', label: 'Ciele' },
   { name: 'Obchod', icon: '🛍️', label: 'Obchod' },
 ];
 
@@ -207,7 +205,6 @@ export default function App() {
         >
           <Tab.Screen name="Ovládanie" component={ControlScreen} options={{ headerShown: false }} />
           <Tab.Screen name="Štatistiky" component={StatisticsScreen} />
-            <Tab.Screen name="Ciele" component={GoalsScreen} />
           <Tab.Screen name="Obchod" component={ShopScreen} />
         </Tab.Navigator>
       </NavigationContainer>

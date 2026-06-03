@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
+import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -155,6 +156,34 @@ const sl = StyleSheet.create({
   tick: { position: 'absolute', width: 1.5, backgroundColor: '#fff', borderRadius: 1, top: '50%', marginTop: -8 },
   thumb: { position: 'absolute', width: 48, height: 48, borderRadius: 24, backgroundColor: '#fff', top: 3 },
 });
+
+const SCORE = 80;
+const SR = 90; const SR_STROKE = 8; const SR_R = (SR - SR_STROKE) / 2; const SR_C = 2 * Math.PI * SR_R;
+function ScoreRing({ score }: { score: number }) {
+  const offset = SR_C * (1 - score / 100);
+  return (
+    <View style={{ width: SR, height: SR, alignItems: 'center', justifyContent: 'center' }}>
+      <Svg width={SR} height={SR} style={{ position: 'absolute' }}>
+        <Circle cx={SR/2} cy={SR/2} r={SR_R} stroke="rgba(255,255,255,0.15)" strokeWidth={SR_STROKE} fill="none" />
+        <Circle cx={SR/2} cy={SR/2} r={SR_R} stroke="#fff" strokeWidth={SR_STROKE} fill="none"
+          strokeDasharray={`${SR_C}`} strokeDashoffset={offset} strokeLinecap="round"
+          rotation="-90" originX={SR/2} originY={SR/2} />
+      </Svg>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 26, color: '#fff' }}>{score}</Text>
+    </View>
+  );
+}
+
+function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
+  return (
+    <View style={{ alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      <Text style={{ fontFamily: fonts.semiBold, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>{label}</Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: '#fff' }}>{value}</Text>
+      <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{pct}</Text>
+    </View>
+  );
+}
 
 function GlassCard({ children, style }: { children: React.ReactNode; style?: any }) {
   return (
@@ -485,7 +514,7 @@ export default function ControlScreen() {
             <View style={s.menuLine} />
             <View style={s.menuLine} />
           </TouchableOpacity>
-          <Text style={s.logoText}>Balanza</Text>
+          <Image source={require('../../assets/logo_balanza_new.png')} style={s.logoImg} resizeMode="contain" />
           <View style={{ width: 40 }} />
         </View>
         {profile.name ? (
@@ -591,7 +620,30 @@ export default function ControlScreen() {
           </View>
         </LiquidCard>
 
-
+        {/* Score + Breakdown combined card */}
+        <LiquidCard style={{ marginBottom: 20 }}>
+          <View style={s.scoreCardInner}>
+            <ScoreRing score={SCORE} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.scoreCardTitle}>Skóre dňa · {SCORE}/100</Text>
+              <Text style={s.scoreCardDesc}>{profile.name ? `${profile.name}, tvoje` : 'Tvoje'} dnešné skóre pracovného dňa je {SCORE} bodov.</Text>
+            </View>
+          </View>
+          <View style={s.hDivider} />
+          <View style={{ gap: 16, paddingTop: 16 }}>
+            <Text style={s.scoreCardTitle}>Rozloženie dňa</Text>
+            <View style={s.breakBar}>
+              <View style={[s.breakSeg, { flex: 3, backgroundColor: '#5B8DEF', borderTopLeftRadius: 8, borderBottomLeftRadius: 8 }]} />
+              <View style={[s.breakSeg, { flex: 4, backgroundColor: '#27AE60' }]} />
+              <View style={[s.breakSeg, { flex: 3, backgroundColor: '#E67E22', borderTopRightRadius: 8, borderBottomRightRadius: 8 }]} />
+            </View>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <BreakItem color="#5B8DEF" label="Sedenie"  value="3h" pct="30%" />
+              <BreakItem color="#27AE60" label="Státie"   value="4h" pct="40%" />
+              <BreakItem color="#E67E22" label="Kráčanie" value="3h" pct="30%" />
+            </View>
+          </View>
+        </LiquidCard>
 
       </Animated.ScrollView>
 
@@ -766,8 +818,7 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32 },
   menuBtn: { width: 40, height: 40, justifyContent: 'center', gap: 5 },
   menuLine: { height: 2, backgroundColor: '#ffffff', borderRadius: 2, width: 24 },
-  logo: { width: 180, height: 60 },
-  logoText: { fontFamily: 'CormorantGaramond-BoldItalic', fontSize: 42, color: '#ffffff', letterSpacing: 1, shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } },
+  logoImg: { width: 160, height: 52 },
 
   glassOuter: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: colors.border },
   glassInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
@@ -871,4 +922,11 @@ const s = StyleSheet.create({
   deviceName: { fontFamily: fonts.semiBold, color: colors.textPrimary, fontSize: 16 },
   deviceId: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   input: { backgroundColor: colors.bgCardAlt, borderRadius: 12, padding: 14, fontSize: 16, fontFamily: fonts.regular, color: colors.textPrimary, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
+
+  scoreCardOuter: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 20 },
+  scoreCardInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, flexDirection: 'row', alignItems: 'center', gap: 20 },
+  scoreCardTitle: { fontFamily: fonts.bold, fontSize: 18, color: '#fff', marginBottom: 8 },
+  scoreCardDesc: { fontFamily: fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 20 },
+  breakBar: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 },
+  breakSeg: { height: '100%' },
 });
