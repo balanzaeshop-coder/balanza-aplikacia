@@ -275,10 +275,7 @@ export default function ControlScreen() {
         const sessionKm    = Math.max(0, s.distance - sessionDistStart.current);
         if (sessionSteps > 0) lastSessionSteps.current = sessionSteps;
         if (sessionKm > 0) lastSessionKm.current = sessionKm;
-        const totalSteps = todayBaseSteps.current + lastSessionSteps.current;
-        const totalKm    = todayBaseKm.current + lastSessionKm.current;
-        const totalSecs  = todayBaseSecs.current + sessionSecs;
-        updateLiveActivity({ speed: s.speed, steps: totalSteps, km: totalKm, seconds: totalSecs });
+        updateLiveActivity({ speed: s.speed, steps: lastSessionSteps.current, km: lastSessionKm.current, seconds: sessionSecs });
         AsyncStorage.setItem('live_session_stats', JSON.stringify({
           active: true,
           speed: s.speed,
