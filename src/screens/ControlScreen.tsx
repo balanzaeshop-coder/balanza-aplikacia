@@ -22,7 +22,7 @@ import {
   View,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import Svg, { Circle } from 'react-native-svg';
+import Svg, { Circle, Path, Defs, LinearGradient as SvgLinearGradient, Stop, Line, Text as SvgText } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,6 +38,74 @@ import { colors, fonts } from '../theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const BG_HEIGHT = SCREEN_H * 0.55;
+
+// Decorative air quality chart — static design data
+const AQ_LABELS = ['8:00', '10:00', '12:00', '14:00', '16:00', '18:00'];
+const AQ_VALUES = [420, 480, 610, 720, 580, 430]; // CO₂ ppm
+const AQ_W = SCREEN_W - 80;
+const AQ_H = 90;
+const AQ_PAD_L = 8; const AQ_PAD_R = 8; const AQ_PAD_T = 8; const AQ_PAD_B = 24;
+const aqMin = 380; const aqMax = 780;
+
+function aqY(v: number) {
+  return AQ_PAD_T + (1 - (v - aqMin) / (aqMax - aqMin)) * (AQ_H - AQ_PAD_T - AQ_PAD_B);
+}
+function aqX(i: number) {
+  return AQ_PAD_L + (i / (AQ_VALUES.length - 1)) * (AQ_W - AQ_PAD_L - AQ_PAD_R);
+}
+
+function buildLinePath() {
+  return AQ_VALUES.map((v, i) => `${i === 0 ? 'M' : 'L'}${aqX(i).toFixed(1)},${aqY(v).toFixed(1)}`).join(' ');
+}
+function buildAreaPath() {
+  const line = buildLinePath();
+  const lastX = aqX(AQ_VALUES.length - 1).toFixed(1);
+  const baseY = (AQ_H - AQ_PAD_B).toFixed(1);
+  return `${line} L${lastX},${baseY} L${aqX(0).toFixed(1)},${baseY} Z`;
+}
+
+function AirQualityChart() {
+  return (
+    <LiquidCard style={{ marginBottom: 20 }}>
+      <View style={{ paddingBottom: 4 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 12 }}>
+          <View>
+            <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)', letterSpacing: 0.8, textTransform: 'uppercase' }}>Kvalita vzduchu</Text>
+            <Text style={{ fontFamily: fonts.bold, fontSize: 22, color: '#fff', marginTop: 2 }}>Dobrá</Text>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Text style={{ fontFamily: fonts.bold, fontSize: 28, color: '#7BE495' }}>430</Text>
+            <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>ppm CO₂</Text>
+          </View>
+        </View>
+        <Svg width={AQ_W} height={AQ_H}>
+          <Defs>
+            <SvgLinearGradient id="aqGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor="#7BE495" stopOpacity="0.35" />
+              <Stop offset="1" stopColor="#7BE495" stopOpacity="0" />
+            </SvgLinearGradient>
+          </Defs>
+          {/* Area fill */}
+          <Path d={buildAreaPath()} fill="url(#aqGrad)" />
+          {/* Line */}
+          <Path d={buildLinePath()} stroke="#7BE495" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          {/* Dots */}
+          {AQ_VALUES.map((v, i) => (
+            <Circle key={i} cx={aqX(i)} cy={aqY(v)} r={3} fill="#7BE495" />
+          ))}
+          {/* X labels */}
+          {AQ_LABELS.map((l, i) => (
+            <SvgText key={i} x={aqX(i)} y={AQ_H - 4} fontSize="9" fill="rgba(255,255,255,0.35)" textAnchor="middle">{l}</SvgText>
+          ))}
+        </Svg>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#7BE495' }} />
+          <Text style={{ fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.45)' }}>Dnes v norme — kancelárska úroveň CO₂</Text>
+        </View>
+      </View>
+    </LiquidCard>
+  );
+}
 
 const ble = new WalkingPadBLE();
 const START_SPEED_KEY = 'start_speed_v1';
@@ -660,16 +728,9 @@ export default function ControlScreen() {
           </View>
         </LiquidCard>
 
-        {/* Today's stats */}
+        {/* Today's stats + Score + Breakdown */}
         <Text style={s.todaySectionHeading}>Dnes:</Text>
-        <View style={s.todayGrid}>
-          <TodayStatCard icon="👟" value={todayStats.steps.toLocaleString('sk-SK')} label="krokov" />
-          <TodayStatCard icon="🗺️" value={todayStats.km.toFixed(2)} label="km" />
-          <TodayStatCard icon="🔥" value={String(todayStats.kcal)} label="kcal" />
-          <TodayStatCard icon="⏱️" value={formatTime(todayStats.secs)} label="aktívny čas" />
-        </View>
 
-        {/* Score + Breakdown combined card */}
         <LiquidCard style={{ marginBottom: 20 }}>
           <View style={s.scoreCardInner}>
             <ScoreRing score={SCORE} />
@@ -693,6 +754,15 @@ export default function ControlScreen() {
             </View>
           </View>
         </LiquidCard>
+
+        <View style={s.todayGrid}>
+          <TodayStatCard icon="👟" value={todayStats.steps.toLocaleString('sk-SK')} label="krokov" />
+          <TodayStatCard icon="🗺️" value={todayStats.km.toFixed(2)} label="km" />
+          <TodayStatCard icon="🔥" value={String(todayStats.kcal)} label="kcal" />
+          <TodayStatCard icon="⏱️" value={formatTime(todayStats.secs)} label="aktívny čas" />
+        </View>
+
+        <AirQualityChart />
 
       </Animated.ScrollView>
 
