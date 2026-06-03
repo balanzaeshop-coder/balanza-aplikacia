@@ -593,7 +593,12 @@ export default function ControlScreen() {
 
           {phase === 'connected' && (
             <>
-              {padImage && <Image source={padImage} style={s.previewPadImage} resizeMode="contain" />}
+              {padImage && (
+                <View style={{ position: 'relative' }}>
+                  <Image source={padImage} style={s.previewPadImage} resizeMode="contain" />
+                  <View style={s.connectedDot} />
+                </View>
+              )}
               <TouchableOpacity style={s.nameRow} onPress={() => { setNewName(customName); setRenaming(true); }}>
                 <Text style={s.padName}>{customName || origName || 'WalkingPad'}</Text>
                 <Text style={s.editIcon}>✎</Text>
@@ -896,6 +901,7 @@ const s = StyleSheet.create({
   deskLabel: { fontFamily: fonts.regular, fontSize: 14, color: colors.textSecondary, lineHeight: 20 },
   deskHeight: { fontFamily: fonts.bold, fontSize: 40, color: colors.textPrimary, lineHeight: 40 },
   previewPadImage: { width: '100%', height: 180, marginBottom: 8 },
+  connectedDot: { position: 'absolute', top: 10, right: 10, width: 12, height: 12, borderRadius: 6, backgroundColor: '#27AE60', borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)', shadowColor: '#27AE60', shadowOpacity: 0.8, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
   previewSpeedRow: { alignItems: 'center', paddingBottom: 4, marginTop: -16 },
   previewSpeed: { fontFamily: fonts.bold, fontSize: 86, color: '#fff', lineHeight: 88 },
   previewSpeedUnit: { fontFamily: fonts.regular, fontSize: 18, color: 'rgba(255,255,255,0.7)', marginTop: 0 },
