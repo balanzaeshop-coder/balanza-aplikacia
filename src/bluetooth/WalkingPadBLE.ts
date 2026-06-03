@@ -44,7 +44,9 @@ export class WalkingPadBLE {
   private device: Device | null = null;
   private onStatus: StatusCallback | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private pollBusyTimer: ReturnType<typeof setTimeout> | null = null;
   private pollBusy = false;
+  private notifySubscription: { remove: () => void } | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private lastDeviceId: string | null = null;
   private shouldReconnect = false;
@@ -137,7 +139,8 @@ export class WalkingPadBLE {
       }
     });
 
-    this.device.monitorCharacteristicForService(
+    this.notifySubscription?.remove();
+    this.notifySubscription = this.device.monitorCharacteristicForService(
       SERVICE_UUID,
       CHAR_NOTIFY,
       (error, char) => {
@@ -178,37 +181,31 @@ export class WalkingPadBLE {
 
   private startPolling() {
     this.stopPolling();
-    this.pollInterval = setInterval(async () => {
+    this.pollInterval = setInterval(() => {
       if (this.pollBusy || !this.device) return;
       this.pollBusy = true;
-      try {
-        await this.askStats();
-        await new Promise(r => setTimeout(r, 200));
-        if (this.device) {
-          const char = await this.device.readCharacteristicForService(SERVICE_UUID, CHAR_NOTIFY);
-          if (char?.value) {
-            const bytes = Array.from(Buffer.from(char.value, 'base64'));
-            const status = parseStatus(bytes);
-            if (status && this.onStatus) this.onStatus(status);
-          }
-        }
-      } catch {} finally {
-        this.pollBusy = false;
-      }
-    }, 800);
+      // Safety timeout: if askStats hangs, release the lock after 2s
+      this.pollBusyTimer = setTimeout(() => { this.pollBusy = false; }, 2000);
+      this.askStats()
+        .catch(() => {})
+        .finally(() => {
+          if (this.pollBusyTimer) { clearTimeout(this.pollBusyTimer); this.pollBusyTimer = null; }
+          this.pollBusy = false;
+        });
+    }, 500);
   }
 
   private stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
-    }
+    if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; }
+    if (this.pollBusyTimer) { clearTimeout(this.pollBusyTimer); this.pollBusyTimer = null; }
     this.pollBusy = false;
   }
 
   async disconnect(): Promise<void> {
     this.disableAutoReconnect();
     this.stopPolling();
+    this.notifySubscription?.remove();
+    this.notifySubscription = null;
     if (this.device) {
       try { await this.device.cancelConnection(); } catch {}
       this.device = null;
