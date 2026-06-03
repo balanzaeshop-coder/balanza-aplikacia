@@ -45,10 +45,7 @@ export class WalkingPadBLE {
   onDisconnect: (() => void) | null = null;
 
   constructor() {
-    this.manager = new BleManager({
-      restoreStateIdentifier: 'balanza-ble-restore',
-      restoreStateFunction: () => {},
-    });
+    this.manager = new BleManager();
   }
 
   onStatusUpdate(cb: StatusCallback) {
