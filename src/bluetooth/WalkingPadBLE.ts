@@ -91,7 +91,7 @@ export class WalkingPadBLE {
 
   async connect(deviceId: string): Promise<void> {
     this.manager.stopDeviceScan();
-    await this.manager.cancelDeviceConnection(deviceId).catch(() => {});
+    await new Promise(r => setTimeout(r, 300));
     this.device = await this.manager.connectToDevice(deviceId, { timeout: 10000 });
     await this.device.discoverAllServicesAndCharacteristics();
 

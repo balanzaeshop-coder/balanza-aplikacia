@@ -108,7 +108,7 @@ export default function StatisticsScreen() {
   const [metric, setMetric] = useState<ChartMetric>('km');
   const [showHistory, setShowHistory] = useState(false);
   const [userName, setUserName] = useState('');
-  const [liveStats, setLiveStats] = useState({ steps: 0, km: 0, seconds: 0, active: false });
+  const [liveStats, setLiveStats] = useState({ active: false, speed: 0, sessionSteps: 0, sessionKm: 0, sessionSecs: 0 });
   const liveInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => { loadProfile().then(p => setUserName(p.name)); }, []);
@@ -163,9 +163,9 @@ export default function StatisticsScreen() {
 
   const today = new Date().toDateString();
   const todayW = workouts.filter(w => new Date(w.date).toDateString() === today);
-  const todaySteps = todayW.reduce((s, w) => s + w.steps, 0) + liveStats.steps;
-  const todayKm    = todayW.reduce((s, w) => s + w.distance, 0) + liveStats.km;
-  const todaySecs  = todayW.reduce((s, w) => s + w.duration, 0) + liveStats.seconds;
+  const todaySteps = todayW.reduce((s, w) => s + w.steps, 0);
+  const todayKm    = todayW.reduce((s, w) => s + w.distance, 0);
+  const todaySecs  = todayW.reduce((s, w) => s + w.duration, 0);
   const todayKcal  = todayW.reduce((s, w) => s + (w.calories ?? 0), 0);
 
   return (
@@ -202,6 +202,39 @@ export default function StatisticsScreen() {
           </View>
         </View>
       </BlurView>
+
+      {/* Aktuálne čísla - len keď pás beží */}
+      {liveStats.active && (
+        <>
+          <Text style={s.sectionHeading}>Aktuálne čísla:</Text>
+          <View style={s.statsGrid}>
+            <BlurView intensity={50} tint="dark" style={s.statCard}>
+              <View style={s.statCardInner}>
+                <Text style={s.statBig}>{liveStats.speed.toFixed(1)} km/h</Text>
+                <Text style={s.statSmall}>aktuálna rýchlosť</Text>
+              </View>
+            </BlurView>
+            <BlurView intensity={50} tint="dark" style={s.statCard}>
+              <View style={s.statCardInner}>
+                <Text style={s.statBig}>{liveStats.sessionSteps.toLocaleString('sk-SK')}</Text>
+                <Text style={s.statSmall}>kroky tejto jazdy</Text>
+              </View>
+            </BlurView>
+            <BlurView intensity={50} tint="dark" style={s.statCard}>
+              <View style={s.statCardInner}>
+                <Text style={s.statBig}>{liveStats.sessionKm.toFixed(2)} km</Text>
+                <Text style={s.statSmall}>vzdialenosť</Text>
+              </View>
+            </BlurView>
+            <BlurView intensity={50} tint="dark" style={s.statCard}>
+              <View style={s.statCardInner}>
+                <Text style={s.statBig}>{formatTime(liveStats.sessionSecs)}</Text>
+                <Text style={s.statSmall}>čas jazdy</Text>
+              </View>
+            </BlurView>
+          </View>
+        </>
+      )}
 
       {/* Stats grid */}
       <Text style={s.sectionHeading}>Dnešné čísla:</Text>

@@ -275,11 +275,17 @@ export default function ControlScreen() {
         const sessionKm    = Math.max(0, s.distance - sessionDistStart.current);
         if (sessionSteps > 0) lastSessionSteps.current = sessionSteps;
         if (sessionKm > 0) lastSessionKm.current = sessionKm;
-        const totalSteps   = todayBaseSteps.current + lastSessionSteps.current;
-        const totalKm      = todayBaseKm.current + lastSessionKm.current;
-        const totalSecs    = todayBaseSecs.current + sessionSecs;
+        const totalSteps = todayBaseSteps.current + lastSessionSteps.current;
+        const totalKm    = todayBaseKm.current + lastSessionKm.current;
+        const totalSecs  = todayBaseSecs.current + sessionSecs;
         updateLiveActivity({ speed: s.speed, steps: totalSteps, km: totalKm, seconds: totalSecs });
-        AsyncStorage.setItem('live_session_stats', JSON.stringify({ steps: totalSteps, km: totalKm, seconds: totalSecs, active: true }));
+        AsyncStorage.setItem('live_session_stats', JSON.stringify({
+          active: true,
+          speed: s.speed,
+          sessionSteps: lastSessionSteps.current,
+          sessionKm: lastSessionKm.current,
+          sessionSecs,
+        }));
       }
     });
 
@@ -435,8 +441,15 @@ export default function ControlScreen() {
     await ble.stopBelt();
     endLiveActivity();
     await AsyncStorage.removeItem('live_session_stats');
-    const s = statusRef.current;
-    if (s) await persistSession(s);
+    const s = statusRef.current ?? {
+      speed: 0,
+      beltState: 0,
+      mode: 0,
+      time: 0,
+      distance: sessionDistStart.current + lastSessionKm.current,
+      steps: sessionStepsStart.current + lastSessionSteps.current,
+    };
+    await persistSession(s);
   }
 
   function changeSpeed(delta: number) {
