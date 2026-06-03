@@ -91,7 +91,6 @@ export class WalkingPadBLE {
 
   async connect(deviceId: string): Promise<void> {
     this.manager.stopDeviceScan();
-    await new Promise(r => setTimeout(r, 300));
     this.device = await this.manager.connectToDevice(deviceId, { timeout: 10000 });
     await this.device.discoverAllServicesAndCharacteristics();
 
@@ -104,15 +103,19 @@ export class WalkingPadBLE {
     this.device.monitorCharacteristicForService(
       SERVICE_UUID,
       CHAR_NOTIFY,
-      (_error, char) => {
+      (error, char) => {
+        if (error) return;
         if (char?.value) {
-          const bytes = Array.from(Buffer.from(char.value, 'base64'));
-          const status = parseStatus(bytes);
-          if (status && this.onStatus) this.onStatus(status);
+          try {
+            const bytes = Array.from(Buffer.from(char.value, 'base64'));
+            const status = parseStatus(bytes);
+            if (status && this.onStatus) this.onStatus(status);
+          } catch {}
         }
       }
     );
 
+    await new Promise(r => setTimeout(r, 500));
     await this.setMode(1);
     this.startPolling();
   }
@@ -123,7 +126,7 @@ export class WalkingPadBLE {
       try {
         await this.askStats();
       } catch {}
-    }, 1000);
+    }, 500);
   }
 
   private stopPolling() {

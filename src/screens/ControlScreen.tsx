@@ -196,6 +196,7 @@ export default function ControlScreen() {
   const targetSpeedRef = useRef(startSpeed);
   const justRestored = useRef(false);
   const cmdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const todayBaseSteps = useRef(0);
   const todayBaseKm = useRef(0);
   const todayBaseSecs = useRef(0);
@@ -300,7 +301,7 @@ export default function ControlScreen() {
       justRestored.current = false;
     };
     autoConnect();
-    return () => { ble.destroy(); linkingSub.remove(); };
+    return () => { linkingSub.remove(); };
   }, []);
 
   async function autoConnect() {
@@ -391,19 +392,22 @@ export default function ControlScreen() {
     }
     await loadTodayBase();
     setRunning(true);
-    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
-    await ble.setMode(1);
-    await delay(120);
     await ble.setStartSpeed(targetSpeedRef.current);
-    await delay(120);
     await ble.setSpeed(targetSpeedRef.current);
-    await delay(120);
     await ble.startBelt();
-    await delay(600);
-    if (statusRef.current?.beltState !== 1) {
-      await ble.startBelt();
-    }
-    startLiveActivity({ speed: targetSpeedRef.current, steps: todayBaseSteps.current, km: todayBaseKm.current, seconds: todayBaseSecs.current });
+    startLiveActivity({ speed: targetSpeedRef.current, steps: 0, km: 0, seconds: 0 });
+    heartbeatInterval.current = setInterval(() => {
+      if (!sessionStart.current) return;
+      const sessionSecs = Math.round((Date.now() - sessionStart.current) / 1000);
+      const speed = statusRef.current?.speed ?? targetSpeedRef.current;
+      AsyncStorage.setItem('live_session_stats', JSON.stringify({
+        active: true,
+        speed,
+        sessionSteps: lastSessionSteps.current,
+        sessionKm: lastSessionKm.current,
+        sessionSecs,
+      }));
+    }, 500);
     cmdInterval.current = setInterval(() => {
       const { delta, stop } = consumePendingCommands();
       if (stop && sessionStart.current) { handleStop(); return; }
@@ -435,6 +439,7 @@ export default function ControlScreen() {
   async function handleStop() {
     setRunning(false);
     if (cmdInterval.current) { clearInterval(cmdInterval.current); cmdInterval.current = null; }
+    if (heartbeatInterval.current) { clearInterval(heartbeatInterval.current); heartbeatInterval.current = null; }
     await ble.stopBelt();
     endLiveActivity();
     await AsyncStorage.removeItem('live_session_stats');
