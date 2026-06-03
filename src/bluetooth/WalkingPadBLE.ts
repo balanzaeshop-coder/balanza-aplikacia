@@ -125,8 +125,17 @@ export class WalkingPadBLE {
     this.pollInterval = setInterval(async () => {
       try {
         await this.askStats();
+        await new Promise(r => setTimeout(r, 150));
+        if (this.device) {
+          const char = await this.device.readCharacteristicForService(SERVICE_UUID, CHAR_NOTIFY);
+          if (char?.value) {
+            const bytes = Array.from(Buffer.from(char.value, 'base64'));
+            const status = parseStatus(bytes);
+            if (status && this.onStatus) this.onStatus(status);
+          }
+        }
       } catch {}
-    }, 500);
+    }, 700);
   }
 
   private stopPolling() {
