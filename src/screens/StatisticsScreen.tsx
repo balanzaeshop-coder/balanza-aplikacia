@@ -63,14 +63,16 @@ function aggregateByDay(workouts: Workout[], days: number) {
 }
 
 const chartConfig = {
-  backgroundGradientFrom: 'rgba(255,255,255,0.06)',
-  backgroundGradientTo: 'rgba(255,255,255,0.06)',
+  backgroundGradientFrom: '#141320',
+  backgroundGradientTo: '#141320',
+  backgroundGradientFromOpacity: 1,
+  backgroundGradientToOpacity: 1,
   color: (opacity = 1) => `rgba(201, 193, 232, ${opacity})`,
-  labelColor: () => 'rgba(255,255,255,0.5)',
+  labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity * 0.5})`,
   barPercentage: 0.55,
-  decimalPlaces: 1,
-  propsForBackgroundLines: { stroke: 'rgba(255,255,255,0.08)' },
-  propsForLabels: { fontFamily: fonts.regular, fontSize: 11 },
+  decimalPlaces: 0,
+  propsForBackgroundLines: { stroke: 'rgba(255,255,255,0.08)', strokeDasharray: '' },
+  propsForLabels: { fontSize: 11 },
 };
 
 
@@ -129,13 +131,6 @@ export default function StatisticsScreen() {
     datasets: [{ data: chartValues.length > 0 ? chartValues : [0] }],
   };
 
-  const today = new Date().toDateString();
-  const todayW = workouts.filter(w => new Date(w.date).toDateString() === today);
-  const todaySteps = todayW.reduce((s, w) => s + w.steps, 0);
-  const todayKm    = todayW.reduce((s, w) => s + w.distance, 0);
-  const todayKcal  = todayW.reduce((s, w) => s + (w.calories ?? 0), 0);
-  const todaySecs  = todayW.reduce((s, w) => s + w.duration, 0);
-
   const allSteps = workouts.reduce((s, w) => s + w.steps, 0);
   const allKm    = workouts.reduce((s, w) => s + w.distance, 0);
   const allKcal  = workouts.reduce((s, w) => s + (w.calories ?? 0), 0);
@@ -145,15 +140,6 @@ export default function StatisticsScreen() {
 
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
-
-      {/* Today's stats */}
-      <Text style={s.sectionHeading}>Dnes</Text>
-      <View style={s.statsGrid}>
-        <StatCard icon="👟" value={todaySteps.toLocaleString('sk-SK')} label="krokov" />
-        <StatCard icon="🗺️" value={todayKm.toFixed(2)} label="km" />
-        <StatCard icon="🔥" value={String(todayKcal)} label="kcal" />
-        <StatCard icon="⏱️" value={formatTime(todaySecs)} label="aktívny čas" />
-      </View>
 
       {/* Chart section */}
       <Text style={s.sectionHeading}>Trend</Text>
@@ -187,7 +173,7 @@ export default function StatisticsScreen() {
       </View>
 
       {/* Chart */}
-      <BlurView intensity={40} tint="dark" style={s.chartCard}>
+      <View style={s.chartCard}>
         <View style={s.chartCardInner}>
           <Text style={s.chartTitle}>{currentMetric.label} · {currentMetric.unit}</Text>
           {workouts.length === 0 ? (
@@ -198,10 +184,10 @@ export default function StatisticsScreen() {
           ) : (
             <BarChart
               data={chartData}
-              width={CHART_WIDTH - 40}
-              height={180}
+              width={CHART_WIDTH - 32}
+              height={200}
               chartConfig={chartConfig}
-              style={{ borderRadius: 12, marginLeft: -16 }}
+              style={{ borderRadius: 8, marginHorizontal: -8 }}
               showValuesOnTopOfBars={false}
               withInnerLines
               yAxisLabel=""
@@ -210,7 +196,7 @@ export default function StatisticsScreen() {
             />
           )}
         </View>
-      </BlurView>
+      </View>
 
       {/* Lifetime stats */}
       <Text style={s.sectionHeading}>Celkovo od začiatku</Text>
@@ -302,8 +288,8 @@ const s = StyleSheet.create({
   metricBtnText: { fontFamily: fonts.semiBold, color: colors.textSecondary, fontSize: 12 },
   metricBtnTextActive: { fontFamily: fonts.semiBold, color: colors.accent, fontSize: 12 },
 
-  chartCard: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', marginBottom: 20 },
-  chartCardInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
+  chartCard: { borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', marginBottom: 20, backgroundColor: '#141320' },
+  chartCardInner: { padding: 16, paddingBottom: 8 },
   chartTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: 'rgba(255,255,255,0.55)', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 16 },
   emptyChart: { height: 160, alignItems: 'center', justifyContent: 'center', gap: 8 },
   emptyText: { fontFamily: fonts.semiBold, color: colors.textSecondary, fontSize: 15 },

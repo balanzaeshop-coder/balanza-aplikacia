@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,9 +26,10 @@ import Svg, { Circle } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { Device } from 'react-native-ble-plx';
 import { WalkingPadBLE, PadStatus, MODE_MANUAL } from '../bluetooth/WalkingPadBLE';
-import { saveWorkout, formatTime } from '../storage/workoutStorage';
+import { saveWorkout, loadWorkouts, formatTime } from '../storage/workoutStorage';
 import { loadProfile, saveProfile, calcCalories, UserProfile } from '../storage/profileStorage';
 import { syncWorkoutToHealth } from '../health/appleHealth';
 import { updateStreak } from '../storage/streakStorage';
@@ -174,6 +175,26 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
+function TodayStatCard({ icon, value, label }: { icon: string; value: string; label: string }) {
+  return (
+    <BlurView intensity={40} tint="dark" style={ts.card}>
+      <View style={ts.inner}>
+        <Text style={ts.icon}>{icon}</Text>
+        <Text style={ts.value}>{value}</Text>
+        <Text style={ts.label}>{label}</Text>
+      </View>
+    </BlurView>
+  );
+}
+
+const ts = StyleSheet.create({
+  card: { width: '48%', borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  inner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 18, minHeight: 100, justifyContent: 'flex-end' },
+  icon: { fontSize: 24, marginBottom: 8 },
+  value: { fontFamily: fonts.bold, fontSize: 26, color: '#fff', lineHeight: 30 },
+  label: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 3 },
+});
+
 function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
   return (
     <View style={{ alignItems: 'center', gap: 4 }}>
@@ -218,6 +239,7 @@ export default function ControlScreen() {
   const [showDataSharing, setShowDataSharing] = useState(false);
   const [profile, setProfile] = useState<UserProfile>({ name: '', weight: 70, height: 175, age: 30, gender: 'male' });
   const [profileForm, setProfileForm] = useState({ name: '', weight: '70', height: '175', age: '30' });
+  const [todayStats, setTodayStats] = useState({ steps: 0, km: 0, kcal: 0, secs: 0 });
 
   const phaseRef = useRef<'idle' | 'scanning' | 'picking' | 'connecting' | 'connected'>('idle');
   const sessionStart = useRef<number | null>(null);
@@ -322,6 +344,19 @@ export default function ControlScreen() {
       linkingSub.remove();
     };
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadWorkouts().then(all => {
+      const today = new Date().toDateString();
+      const w = all.filter(x => new Date(x.date).toDateString() === today);
+      setTodayStats({
+        steps: w.reduce((s, x) => s + x.steps, 0),
+        km:    w.reduce((s, x) => s + x.distance, 0),
+        kcal:  w.reduce((s, x) => s + (x.calories ?? 0), 0),
+        secs:  w.reduce((s, x) => s + x.duration, 0),
+      });
+    });
+  }, []));
 
   async function autoConnect() {
     const savedId = await AsyncStorage.getItem(SAVED_DEVICE_KEY);
@@ -620,6 +655,15 @@ export default function ControlScreen() {
           </View>
         </LiquidCard>
 
+        {/* Today's stats */}
+        <Text style={s.todaySectionHeading}>Dnes:</Text>
+        <View style={s.todayGrid}>
+          <TodayStatCard icon="👟" value={todayStats.steps.toLocaleString('sk-SK')} label="krokov" />
+          <TodayStatCard icon="🗺️" value={todayStats.km.toFixed(2)} label="km" />
+          <TodayStatCard icon="🔥" value={String(todayStats.kcal)} label="kcal" />
+          <TodayStatCard icon="⏱️" value={formatTime(todayStats.secs)} label="aktívny čas" />
+        </View>
+
         {/* Score + Breakdown combined card */}
         <LiquidCard style={{ marginBottom: 20 }}>
           <View style={s.scoreCardInner}>
@@ -901,7 +945,6 @@ const s = StyleSheet.create({
   sectionHeader: { marginTop: 36, marginBottom: 12, paddingHorizontal: 4 },
   sectionTitle: { fontFamily: fonts.bold, fontSize: 28, color: colors.textPrimary, letterSpacing: -0.5 },
 
-  todayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   todayCard: { width: (SCREEN_W - 40 - 10) / 2, minHeight: 90 },
   todayValue: { fontFamily: fonts.bold, fontSize: 28, color: colors.textPrimary, marginBottom: 2 },
   todayLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary },
@@ -923,10 +966,11 @@ const s = StyleSheet.create({
   deviceId: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 12, marginTop: 2 },
   input: { backgroundColor: colors.bgCardAlt, borderRadius: 12, padding: 14, fontSize: 16, fontFamily: fonts.regular, color: colors.textPrimary, marginBottom: 8, borderWidth: 1, borderColor: colors.border },
 
-  scoreCardOuter: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 20 },
-  scoreCardInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, flexDirection: 'row', alignItems: 'center', gap: 20 },
+  scoreCardInner: { flexDirection: 'row', alignItems: 'center', gap: 20, marginBottom: 4 },
   scoreCardTitle: { fontFamily: fonts.bold, fontSize: 18, color: '#fff', marginBottom: 8 },
   scoreCardDesc: { fontFamily: fonts.regular, fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 20 },
   breakBar: { flexDirection: 'row', height: 16, borderRadius: 8, overflow: 'hidden', gap: 2 },
   breakSeg: { height: '100%' },
+  todaySectionHeading: { fontFamily: fonts.boldItalic, fontSize: 42, color: '#fff', marginBottom: 12, marginTop: 8 },
+  todayGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
 });
