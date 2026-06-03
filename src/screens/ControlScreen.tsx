@@ -419,12 +419,12 @@ export default function ControlScreen() {
   async function handleStart() {
     if (!sessionStart.current) {
       sessionStart.current = Date.now();
-      sessionStepsStart.current = status?.steps ?? 0;
-      sessionDistStart.current = status?.distance ?? 0;
+      sessionStepsStart.current = 0;
+      sessionDistStart.current = 0;
       AsyncStorage.setItem(SESSION_KEY, JSON.stringify({
         startTime: sessionStart.current,
-        stepsStart: sessionStepsStart.current,
-        distStart: sessionDistStart.current,
+        stepsStart: 0,
+        distStart: 0,
       }));
     }
     await loadTodayBase();
