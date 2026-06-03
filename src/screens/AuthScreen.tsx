@@ -24,6 +24,7 @@ import { colors, fonts } from '../theme';
 
 GoogleSignin.configure({
   webClientId: '456011197309-76eph4f6c58k2jnlg62q0q2of85flp4e.apps.googleusercontent.com',
+  iosClientId: '456011197309-rl6u5ajjip4jr0vg1nulip2p0c9te6j5.apps.googleusercontent.com',
 });
 
 export default function AuthScreen({ onDone }: { onDone: () => void }) {
