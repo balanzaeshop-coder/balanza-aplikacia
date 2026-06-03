@@ -11,7 +11,8 @@ import {
 import { BlurView } from 'expo-blur';
 import Svg, { Circle } from 'react-native-svg';
 import { useFocusEffect } from '@react-navigation/native';
-import { loadWorkouts, deleteWorkout, formatDate, Workout } from '../storage/workoutStorage';
+import { BarChart } from 'react-native-chart-kit';
+import { loadWorkouts, deleteWorkout, formatTime, formatDate, Workout } from '../storage/workoutStorage';
 import { loadProfile } from '../storage/profileStorage';
 import { colors, fonts } from '../theme';
 
@@ -20,6 +21,64 @@ const RING_SIZE = 90;
 const STROKE = 8;
 const RADIUS = (RING_SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CHART_WIDTH = SCREEN_WIDTH - 32;
+
+type Period = '7d' | '30d';
+type Metric = 'kroky' | 'km' | 'kcal' | 'cas';
+
+const METRICS: { key: Metric; label: string; unit: string }[] = [
+  { key: 'kroky', label: 'Kroky', unit: 'krokov' },
+  { key: 'km',    label: 'Km',    unit: 'km' },
+  { key: 'kcal',  label: 'Kcal',  unit: 'kcal' },
+  { key: 'cas',   label: 'Čas',   unit: 'min' },
+];
+
+function aggregateByDay(workouts: Workout[], days: number) {
+  const now = new Date();
+  const labels: string[] = [];
+  const kroky: number[] = [];
+  const km: number[] = [];
+  const kcal: number[] = [];
+  const cas: number[] = [];
+
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(now);
+    day.setDate(now.getDate() - i);
+    day.setHours(0, 0, 0, 0);
+    const next = new Date(day);
+    next.setDate(day.getDate() + 1);
+
+    if (days <= 7) {
+      labels.push(['Ne', 'Po', 'Ut', 'St', 'Št', 'Pi', 'So'][day.getDay()]);
+    } else {
+      labels.push(i % 5 === 0 ? String(day.getDate()) : '');
+    }
+
+    const dayW = workouts.filter(w => {
+      const d = new Date(w.date);
+      return d >= day && d < next;
+    });
+
+    kroky.push(dayW.reduce((s, w) => s + w.steps, 0));
+    km.push(parseFloat(dayW.reduce((s, w) => s + w.distance, 0).toFixed(2)));
+    kcal.push(dayW.reduce((s, w) => s + (w.calories ?? 0), 0));
+    cas.push(Math.round(dayW.reduce((s, w) => s + w.duration, 0) / 60));
+  }
+
+  return { labels, kroky, km, kcal, cas };
+}
+
+const chartConfig = {
+  backgroundGradientFrom: 'rgba(255,255,255,0.06)',
+  backgroundGradientTo: 'rgba(255,255,255,0.06)',
+  color: (opacity = 1) => `rgba(201, 193, 232, ${opacity})`,
+  labelColor: () => 'rgba(255,255,255,0.5)',
+  barPercentage: 0.55,
+  decimalPlaces: 1,
+  propsForBackgroundLines: { stroke: 'rgba(255,255,255,0.08)' },
+  propsForLabels: { fontFamily: fonts.regular, fontSize: 11 },
+};
 
 function ScoreRing({ score }: { score: number }) {
   const progress = CIRCUMFERENCE * (1 - score / 100);
@@ -41,19 +100,50 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+function StatCard({ icon, value, label, sub }: { icon: string; value: string; label: string; sub?: string }) {
+  return (
+    <BlurView intensity={40} tint="dark" style={s.statCard}>
+      <View style={s.statCardInner}>
+        <Text style={s.statIcon}>{icon}</Text>
+        <Text style={s.statValue}>{value}</Text>
+        <Text style={s.statLabel}>{label}</Text>
+        {sub ? <Text style={s.statSub}>{sub}</Text> : null}
+      </View>
+    </BlurView>
+  );
+}
+
+function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
+  return (
+    <View style={s.breakItem}>
+      <View style={[s.breakDot, { backgroundColor: color }]} />
+      <Text style={s.breakLabel}>{label}</Text>
+      <Text style={s.breakValue}>{value}</Text>
+      <Text style={s.breakPct}>{pct}</Text>
+    </View>
+  );
+}
+
+function CardStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={s.cardStat}>
+      <Text style={s.cardStatValue}>{value}</Text>
+      <Text style={s.cardStatLabel}>{label}</Text>
+    </View>
+  );
+}
 
 export default function StatisticsScreen() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [userName, setUserName] = useState('');
+  const [period, setPeriod] = useState<Period>('7d');
+  const [metric, setMetric] = useState<Metric>('kroky');
 
   useEffect(() => { loadProfile().then(p => setUserName(p.name)); }, []);
 
   useFocusEffect(
-    useCallback(() => {
-      loadWorkouts().then(setWorkouts);
-    }, [])
+    useCallback(() => { loadWorkouts().then(setWorkouts); }, [])
   );
 
   async function handleDelete(id: string) {
@@ -69,11 +159,34 @@ export default function StatisticsScreen() {
     ]);
   }
 
+  const days = period === '7d' ? 7 : 30;
+  const agg = aggregateByDay(workouts, days);
+
+  const chartValues = agg[metric];
+  const chartData = {
+    labels: agg.labels,
+    datasets: [{ data: chartValues.length > 0 ? chartValues : [0] }],
+  };
+
+  const today = new Date().toDateString();
+  const todayW = workouts.filter(w => new Date(w.date).toDateString() === today);
+  const todaySteps = todayW.reduce((s, w) => s + w.steps, 0);
+  const todayKm    = todayW.reduce((s, w) => s + w.distance, 0);
+  const todayKcal  = todayW.reduce((s, w) => s + (w.calories ?? 0), 0);
+  const todaySecs  = todayW.reduce((s, w) => s + w.duration, 0);
+
+  const allSteps = workouts.reduce((s, w) => s + w.steps, 0);
+  const allKm    = workouts.reduce((s, w) => s + w.distance, 0);
+  const allKcal  = workouts.reduce((s, w) => s + (w.calories ?? 0), 0);
+  const allSecs  = workouts.reduce((s, w) => s + w.duration, 0);
+
+  const currentMetric = METRICS.find(m => m.key === metric)!;
+
   return (
     <ScrollView style={s.scroll} contentContainerStyle={s.content}>
 
       {/* Score card */}
-      <BlurView intensity={50} tint="dark" style={s.scoreOuter}>
+      <BlurView intensity={50} tint="dark" style={s.glassCard}>
         <View style={s.scoreInner}>
           <ScoreRing score={SCORE} />
           <View style={s.scoreRight}>
@@ -83,8 +196,8 @@ export default function StatisticsScreen() {
         </View>
       </BlurView>
 
-      {/* Activity breakdown card */}
-      <BlurView intensity={50} tint="dark" style={s.scoreOuter}>
+      {/* Breakdown card */}
+      <BlurView intensity={50} tint="dark" style={s.glassCard}>
         <View style={[s.scoreInner, { flexDirection: 'column', gap: 16 }]}>
           <Text style={s.scoreTitle}>Rozloženie dňa</Text>
           <View style={s.breakBar}>
@@ -94,19 +207,110 @@ export default function StatisticsScreen() {
           </View>
           <View style={s.breakLegend}>
             <BreakItem color="#5B8DEF" label="Sedenie" value="3h" pct="30%" />
-            <BreakItem color="#27AE60" label="Státie" value="4h" pct="40%" />
+            <BreakItem color="#27AE60" label="Státie"  value="4h" pct="40%" />
             <BreakItem color="#E67E22" label="Kráčanie" value="3h" pct="30%" />
           </View>
         </View>
       </BlurView>
 
-      <View style={s.lifetimeCard}>
-        <Text style={s.lifetimeTitle}>Celkovo od začiatku</Text>
-        <View style={s.lifetimeRow}>
-          <LifetimeStat icon="🏃" value={String(workouts.length)} label="tréningov" />
-        </View>
+      {/* Today's stats */}
+      <Text style={s.sectionHeading}>Dnes</Text>
+      <View style={s.statsGrid}>
+        <StatCard icon="👟" value={todaySteps.toLocaleString('sk-SK')} label="krokov" />
+        <StatCard icon="🗺️" value={todayKm.toFixed(2)} label="km" />
+        <StatCard icon="🔥" value={String(todayKcal)} label="kcal" />
+        <StatCard icon="⏱️" value={formatTime(todaySecs)} label="aktívny čas" />
       </View>
 
+      {/* Chart section */}
+      <Text style={s.sectionHeading}>Trend</Text>
+
+      {/* Period selector */}
+      <View style={s.segmentRow}>
+        {(['7d', '30d'] as Period[]).map(p => (
+          <TouchableOpacity
+            key={p}
+            style={[s.segment, period === p && s.segmentActive]}
+            onPress={() => setPeriod(p)}
+          >
+            <Text style={[s.segmentText, period === p && s.segmentTextActive]}>
+              {p === '7d' ? '7 dní' : '30 dní'}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Metric selector */}
+      <View style={s.metricRow}>
+        {METRICS.map(m => (
+          <TouchableOpacity
+            key={m.key}
+            style={[s.metricBtn, metric === m.key && s.metricBtnActive]}
+            onPress={() => setMetric(m.key)}
+          >
+            <Text style={[s.metricBtnText, metric === m.key && s.metricBtnTextActive]}>{m.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Chart */}
+      <BlurView intensity={40} tint="dark" style={s.chartCard}>
+        <View style={s.chartCardInner}>
+          <Text style={s.chartTitle}>{currentMetric.label} · {currentMetric.unit}</Text>
+          {workouts.length === 0 ? (
+            <View style={s.emptyChart}>
+              <Text style={s.emptyText}>Zatiaľ žiadne dáta</Text>
+              <Text style={s.emptySubText}>Spusti tréning a štatistiky sa začnú plniť</Text>
+            </View>
+          ) : (
+            <BarChart
+              data={chartData}
+              width={CHART_WIDTH - 40}
+              height={180}
+              chartConfig={chartConfig}
+              style={{ borderRadius: 12, marginLeft: -16 }}
+              showValuesOnTopOfBars={false}
+              withInnerLines
+              yAxisLabel=""
+              yAxisSuffix=""
+              fromZero
+            />
+          )}
+        </View>
+      </BlurView>
+
+      {/* Lifetime stats */}
+      <Text style={s.sectionHeading}>Celkovo od začiatku</Text>
+      <View style={s.statsGrid}>
+        <StatCard icon="🏃" value={String(workouts.length)} label="tréningov" />
+        <StatCard icon="🗺️" value={allKm.toFixed(1)} label="km spolu" />
+        <StatCard icon="🔥" value={String(allKcal)} label="kcal spolu" />
+        <StatCard icon="⏱️" value={`${Math.round(allSecs / 3600)}h`} label="aktívne hodiny" />
+      </View>
+
+      {/* Top steps */}
+      {workouts.length > 0 && (
+        <>
+          <Text style={s.sectionHeading}>Rekord</Text>
+          <BlurView intensity={40} tint="dark" style={s.glassCard}>
+            <View style={s.recordRow}>
+              <View style={s.recordItem}>
+                <Text style={s.recordIcon}>👟</Text>
+                <Text style={s.recordValue}>{Math.max(...workouts.map(w => w.steps)).toLocaleString('sk-SK')}</Text>
+                <Text style={s.recordLabel}>krokov v jednom tréningu</Text>
+              </View>
+              <View style={s.recordDivider} />
+              <View style={s.recordItem}>
+                <Text style={s.recordIcon}>🗺️</Text>
+                <Text style={s.recordValue}>{Math.max(...workouts.map(w => w.distance)).toFixed(2)} km</Text>
+                <Text style={s.recordLabel}>najdlhší tréning</Text>
+              </View>
+            </View>
+          </BlurView>
+        </>
+      )}
+
+      {/* History */}
       <TouchableOpacity style={s.historyHeader} onPress={() => setShowHistory(v => !v)}>
         <Text style={s.historyTitle}>História tréningov</Text>
         <Text style={s.historyArrow}>{showHistory ? '▲' : '▼'}</Text>
@@ -124,50 +328,25 @@ export default function StatisticsScreen() {
                 </TouchableOpacity>
               </View>
               <View style={s.cardStats}>
+                <CardStat label="Čas"    value={formatTime(item.duration)} />
+                <CardStat label="km"     value={item.distance.toFixed(2)} />
+                <CardStat label="Kroky"  value={item.steps.toLocaleString('sk-SK')} />
+                <CardStat label="kcal"   value={String(item.calories ?? 0)} />
                 <CardStat label="Ø km/h" value={item.avgSpeed.toFixed(1)} />
               </View>
             </View>
           ))
       )}
+
     </ScrollView>
-  );
-}
-
-function BreakItem({ color, label, value, pct }: { color: string; label: string; value: string; pct: string }) {
-  return (
-    <View style={s.breakItem}>
-      <View style={[s.breakDot, { backgroundColor: color }]} />
-      <Text style={s.breakLabel}>{label}</Text>
-      <Text style={s.breakValue}>{value}</Text>
-      <Text style={s.breakPct}>{pct}</Text>
-    </View>
-  );
-}
-
-function LifetimeStat({ icon, value, label }: { icon: string; value: string; label: string }) {
-  return (
-    <View style={s.lifetimeStat}>
-      <Text style={s.lifetimeIcon}>{icon}</Text>
-      <Text style={s.lifetimeValue}>{value}</Text>
-      <Text style={s.lifetimeLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function CardStat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={s.cardStat}>
-      <Text style={s.cardStatValue}>{value}</Text>
-      <Text style={s.cardStatLabel}>{label}</Text>
-    </View>
   );
 }
 
 const s = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: colors.bg },
-  content: { padding: 16, paddingBottom: 100 },
+  content: { padding: 16, paddingBottom: 110 },
 
-  scoreOuter: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 16 },
+  glassCard: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', marginBottom: 16 },
   scoreInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, flexDirection: 'row', alignItems: 'center', gap: 20 },
   scoreRight: { flex: 1 },
   scoreTitle: { fontFamily: fonts.bold, fontSize: 18, color: '#fff', marginBottom: 8 },
@@ -182,55 +361,52 @@ const s = StyleSheet.create({
   breakValue: { fontFamily: fonts.bold, fontSize: 16, color: '#fff' },
   breakPct: { fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.5)' },
 
-  sectionHeading: { fontFamily: fonts.bold, fontSize: 22, color: '#fff', marginTop: 24, marginBottom: 12 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
-  statCard: { width: (SCREEN_WIDTH - 32 - 10) / 2, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  statCardInner: { backgroundColor: 'rgba(13,12,20,0.4)', padding: 20, minHeight: 100, justifyContent: 'center' },
-  statBig: { fontFamily: fonts.bold, fontSize: 28, color: '#fff' },
-  statSmall: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
+  sectionHeading: { fontFamily: fonts.bold, fontSize: 22, color: '#fff', marginBottom: 12, marginTop: 4 },
 
-  lifetimeCard: { backgroundColor: colors.bgCard, borderRadius: 20, padding: 20, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
-  lifetimeTitle: { color: colors.textSecondary, fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 16 },
-  lifetimeRow: { flexDirection: 'row', justifyContent: 'space-around' },
-  lifetimeStat: { alignItems: 'center', gap: 4 },
-  lifetimeIcon: { fontSize: 22 },
-  lifetimeValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '800' },
-  lifetimeLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600' },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
+  statCard: { width: (SCREEN_WIDTH - 32 - 10) / 2, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
+  statCardInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 18, minHeight: 100, justifyContent: 'flex-end' },
+  statIcon: { fontSize: 24, marginBottom: 8 },
+  statValue: { fontFamily: fonts.bold, fontSize: 26, color: '#fff', lineHeight: 30 },
+  statLabel: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 3 },
+  statSub: { fontFamily: fonts.regular, fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 },
 
-  segmentRow: { flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  segmentRow: { flexDirection: 'row', backgroundColor: colors.bgCard, borderRadius: 12, padding: 3, marginBottom: 12, borderWidth: 1, borderColor: colors.border },
   segment: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
   segmentActive: { backgroundColor: colors.accent },
-  segmentText: { color: colors.textSecondary, fontSize: 14, fontWeight: '600' },
-  segmentTextActive: { color: '#fff' },
-
-  cardsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  summaryCard: { flex: 1, backgroundColor: colors.bgCard, borderRadius: 16, padding: 14, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-  summaryValue: { color: colors.textPrimary, fontSize: 20, fontWeight: '700' },
-  summaryLabel: { color: colors.textSecondary, fontSize: 11, marginTop: 4 },
+  segmentText: { fontFamily: fonts.semiBold, color: colors.textSecondary, fontSize: 14 },
+  segmentTextActive: { fontFamily: fonts.semiBold, color: colors.bg, fontSize: 14 },
 
   metricRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  metricBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10, backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border },
+  metricBtn: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 10, backgroundColor: colors.bgCard, borderWidth: 1, borderColor: colors.border },
   metricBtnActive: { backgroundColor: colors.accentLight, borderColor: colors.accent },
-  metricBtnText: { color: colors.textSecondary, fontSize: 13, fontWeight: '600' },
-  metricBtnTextActive: { color: colors.accent },
+  metricBtnText: { fontFamily: fonts.semiBold, color: colors.textSecondary, fontSize: 12 },
+  metricBtnTextActive: { fontFamily: fonts.semiBold, color: colors.accent, fontSize: 12 },
 
-  chartBox: { backgroundColor: colors.bgCard, borderRadius: 20, padding: 16, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
-  chartLabel: { color: colors.textSecondary, fontSize: 11, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
-  emptyChart: { height: 180, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: colors.textSecondary, fontSize: 14, textAlign: 'center', marginVertical: 12 },
+  chartCard: { borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)', marginBottom: 20 },
+  chartCardInner: { backgroundColor: 'rgba(13,12,20,0.35)', padding: 20 },
+  chartTitle: { fontFamily: fonts.semiBold, fontSize: 13, color: 'rgba(255,255,255,0.55)', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 16 },
+  emptyChart: { height: 160, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  emptyText: { fontFamily: fonts.semiBold, color: colors.textSecondary, fontSize: 15 },
+  emptySubText: { fontFamily: fonts.regular, color: 'rgba(255,255,255,0.3)', fontSize: 13, textAlign: 'center' },
 
-  kcalNote: { marginTop: -8, marginBottom: 12, paddingHorizontal: 4 },
-  kcalNoteText: { color: colors.textSecondary, fontSize: 11, lineHeight: 16 },
+  recordRow: { flexDirection: 'row', backgroundColor: 'rgba(13,12,20,0.4)', padding: 20 },
+  recordItem: { flex: 1, alignItems: 'center', gap: 6 },
+  recordIcon: { fontSize: 26 },
+  recordValue: { fontFamily: fonts.bold, fontSize: 22, color: '#fff' },
+  recordLabel: { fontFamily: fonts.regular, fontSize: 12, color: 'rgba(255,255,255,0.5)', textAlign: 'center' },
+  recordDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.12)', marginHorizontal: 8 },
+
   historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderTopWidth: 1, borderTopColor: colors.border, marginBottom: 8 },
-  historyTitle: { color: colors.textPrimary, fontSize: 16, fontWeight: '700' },
-  historyArrow: { color: colors.textSecondary, fontSize: 13 },
+  historyTitle: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 18 },
+  historyArrow: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 13 },
 
-  card: { backgroundColor: colors.bgCard, borderRadius: 16, padding: 16, marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } },
+  card: { backgroundColor: colors.bgCard, borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: colors.border },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  date: { color: colors.textSecondary, fontSize: 13 },
+  date: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 13 },
   delete: { color: colors.danger, fontSize: 22, lineHeight: 22 },
   cardStats: { flexDirection: 'row', justifyContent: 'space-between' },
   cardStat: { alignItems: 'center' },
-  cardStatValue: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
-  cardStatLabel: { color: colors.textSecondary, fontSize: 11, marginTop: 2 },
+  cardStatValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 15 },
+  cardStatLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 11, marginTop: 2 },
 });

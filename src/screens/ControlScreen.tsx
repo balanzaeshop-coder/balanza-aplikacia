@@ -114,7 +114,9 @@ function SpeedSlider({ value, onChange, onSlidingStart, onSlidingEnd }: {
 
   return (
     <View style={sl.row}>
-      <Text style={sl.icon}>−</Text>
+      <TouchableOpacity onPress={() => onChange(Math.round(Math.max(SPEED_MIN, value - 0.1) * 10) / 10)} activeOpacity={0.6}>
+        <Text style={sl.icon}>−</Text>
+      </TouchableOpacity>
       <View
         style={sl.track}
         onLayout={e => {
@@ -139,7 +141,9 @@ function SpeedSlider({ value, onChange, onSlidingStart, onSlidingEnd }: {
         })}
         <Animated.View style={[sl.thumb, { transform: [{ translateX: thumbX }] }]} />
       </View>
-      <Text style={sl.icon}>+</Text>
+      <TouchableOpacity onPress={() => onChange(Math.round(Math.min(SPEED_MAX, value + 0.1) * 10) / 10)} activeOpacity={0.6}>
+        <Text style={sl.icon}>+</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -549,14 +553,18 @@ export default function ControlScreen() {
               {running && status && (
                 <>
                   <View style={s.hDivider} />
-                  <View style={s.liveStatsRow}>
-                    <LiveStat label="km/h" value={status.speed.toFixed(1).replace('.', ',')} />
-                    <View style={s.vDivider} />
-                    <LiveStat label="kroky" value={status.steps.toLocaleString('sk-SK')} />
-                    <View style={s.vDivider} />
-                    <LiveStat label="km" value={status.distance.toFixed(2)} />
-                    <View style={s.vDivider} />
-                    <LiveStat label="čas" value={formatTime(status.time)} />
+                  <View style={s.liveStatsGrid}>
+                    <View style={s.liveStatsRow2}>
+                      <LiveStat label="km/h" value={status.speed.toFixed(1).replace('.', ',')} big />
+                      <View style={s.vDivider} />
+                      <LiveStat label="kroky" value={status.steps.toLocaleString('sk-SK')} big />
+                    </View>
+                    <View style={s.hDivider} />
+                    <View style={s.liveStatsRow2}>
+                      <LiveStat label="km" value={status.distance.toFixed(2)} big />
+                      <View style={s.vDivider} />
+                      <LiveStat label="čas" value={formatTime(status.time)} big />
+                    </View>
                   </View>
                 </>
               )}
@@ -808,14 +816,16 @@ const s = StyleSheet.create({
   padName: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 28, letterSpacing: -0.5 },
   editIcon: { color: colors.textSecondary, fontSize: 16 },
 
+  liveStatsGrid: { marginTop: 16 },
   liveStatsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
+  liveStatsRow2: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 16 },
   statsSection: { marginTop: 16 },
   hDivider: { height: 1, backgroundColor: colors.border, marginTop: 16 },
   liveStat: { alignItems: 'center', flex: 1 },
   liveStatValue: { fontFamily: fonts.bold, color: colors.textPrimary, fontSize: 22 },
-  liveStatValueBig: { fontSize: 30 },
-  liveStatLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 11, marginTop: 3 },
-  vDivider: { width: 1, height: 36, backgroundColor: colors.border },
+  liveStatValueBig: { fontSize: 34 },
+  liveStatLabel: { fontFamily: fonts.regular, color: colors.textSecondary, fontSize: 13, marginTop: 4 },
+  vDivider: { width: 1, height: 44, backgroundColor: colors.border },
 
   speedControl: { marginTop: 16, alignItems: 'center' },
   speedControlLabel: { fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary, marginBottom: 4 },
