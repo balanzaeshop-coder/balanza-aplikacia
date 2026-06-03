@@ -171,6 +171,7 @@ function LiquidCard({ children, style, active }: { children: React.ReactNode; st
 
 export default function ControlScreen() {
   const [phase, setPhase] = useState<'idle' | 'scanning' | 'picking' | 'connecting' | 'connected'>('idle');
+  const [reconnecting, setReconnecting] = useState(false);
   const [devices, setDevices] = useState<Device[]>([]);
   const [status, setStatus] = useState<PadStatus | null>(null);
   const [running, setRunning] = useState(false);
@@ -188,6 +189,7 @@ export default function ControlScreen() {
   const [profile, setProfile] = useState<UserProfile>({ name: '', weight: 70, height: 175, age: 30, gender: 'male' });
   const [profileForm, setProfileForm] = useState({ name: '', weight: '70', height: '175', age: '30' });
 
+  const phaseRef = useRef<'idle' | 'scanning' | 'picking' | 'connecting' | 'connected'>('idle');
   const sessionStart = useRef<number | null>(null);
   const sessionStepsStart = useRef(0);
   const sessionDistStart = useRef(0);
@@ -197,6 +199,8 @@ export default function ControlScreen() {
   const justRestored = useRef(false);
   const cmdInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [, forceUpdate] = useState(0);
   const todayBaseSteps = useRef(0);
   const todayBaseKm = useRef(0);
   const todayBaseSecs = useRef(0);
@@ -244,9 +248,16 @@ export default function ControlScreen() {
       setProfileForm({ name: p.name, weight: String(p.weight), height: String(p.height), age: String(p.age) });
     });
     const gi = setInterval(() => setGreetingIndex(i => i + 1), 20 * 60 * 1000);
-    return () => clearInterval(gi);
+
     endLiveActivity();
+
     ble.onStatusUpdate(s => {
+      // When reconnect succeeds, transition back to connected
+      if (phaseRef.current === 'connecting') {
+        setPhase('connected');
+        setReconnecting(false);
+        phaseRef.current = 'connected';
+      }
       statusRef.current = s;
       setStatus(s);
       setRunning(s.beltState === 1);
@@ -287,30 +298,48 @@ export default function ControlScreen() {
       }
     });
 
-    const linkingSub = Linking.addEventListener('url', ({ url }) => {
-      if (url.startsWith('balanza://stop') && sessionStart.current) handleStop();
-      else if (url.startsWith('balanza://speed-up')) changeSpeed(0.1);
-      else if (url.startsWith('balanza://speed-down')) changeSpeed(-0.1);
-    });
+    ble.onReconnecting = () => {
+      setReconnecting(true);
+      setPhase('connecting');
+      setStatus(null);
+      phaseRef.current = 'connecting';
+    };
+
     ble.onDisconnect = () => {
+      setReconnecting(false);
       setPhase('idle');
       setStatus(null);
       setRunning(false);
       sessionStart.current = null;
       prevBeltState.current = null;
       justRestored.current = false;
+      phaseRef.current = 'idle';
     };
+
+    const linkingSub = Linking.addEventListener('url', ({ url }) => {
+      if (url.startsWith('balanza://stop') && sessionStart.current) handleStop();
+      else if (url.startsWith('balanza://speed-up')) changeSpeed(0.1);
+      else if (url.startsWith('balanza://speed-down')) changeSpeed(-0.1);
+    });
+
     autoConnect();
-    return () => { linkingSub.remove(); };
+
+    return () => {
+      clearInterval(gi);
+      linkingSub.remove();
+    };
   }, []);
 
   async function autoConnect() {
     const savedId = await AsyncStorage.getItem(SAVED_DEVICE_KEY);
     if (!savedId) return;
     setPhase('connecting');
+    phaseRef.current = 'connecting';
     try {
       await ble.connect(savedId);
+      ble.enableAutoReconnect();
       setPhase('connected');
+      phaseRef.current = 'connected';
       const raw = await AsyncStorage.getItem(SESSION_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
@@ -324,7 +353,10 @@ export default function ControlScreen() {
           await AsyncStorage.removeItem(SESSION_KEY);
         }
       }
-    } catch { setPhase('idle'); }
+    } catch {
+      setPhase('idle');
+      phaseRef.current = 'idle';
+    }
   }
 
   async function startScan() {
@@ -344,9 +376,10 @@ export default function ControlScreen() {
 
   async function connectTo(device: Device) {
     setPhase('connecting');
+    phaseRef.current = 'connecting';
     try {
       await ble.connect(device.id);
-      await ble.setMode(MODE_MANUAL);
+      ble.enableAutoReconnect();
       const orig = device.name ?? 'WalkingPad';
       const existing = await AsyncStorage.getItem(DEVICE_NAME_KEY);
       const displayName = existing ?? orig;
@@ -356,8 +389,10 @@ export default function ControlScreen() {
       await AsyncStorage.setItem(DEVICE_ORIG_KEY, orig);
       await AsyncStorage.setItem(DEVICE_NAME_KEY, displayName);
       setPhase('connected');
+      phaseRef.current = 'connected';
     } catch (e: any) {
       setPhase('idle');
+      phaseRef.current = 'idle';
       Alert.alert('Chyba pripojenia', e.message);
     }
   }
@@ -367,7 +402,9 @@ export default function ControlScreen() {
     await ble.disconnect();
     setStatus(null);
     setRunning(false);
+    setReconnecting(false);
     setPhase('idle');
+    phaseRef.current = 'idle';
   }
 
   async function loadTodayBase() {
@@ -396,6 +433,7 @@ export default function ControlScreen() {
     await ble.setSpeed(targetSpeedRef.current);
     await ble.startBelt();
     startLiveActivity({ speed: targetSpeedRef.current, steps: 0, km: 0, seconds: 0 });
+    timerInterval.current = setInterval(() => forceUpdate(n => n + 1), 1000);
     heartbeatInterval.current = setInterval(() => {
       if (!sessionStart.current) return;
       const sessionSecs = Math.round((Date.now() - sessionStart.current) / 1000);
@@ -440,7 +478,8 @@ export default function ControlScreen() {
     setRunning(false);
     if (cmdInterval.current) { clearInterval(cmdInterval.current); cmdInterval.current = null; }
     if (heartbeatInterval.current) { clearInterval(heartbeatInterval.current); heartbeatInterval.current = null; }
-    await ble.stopBelt();
+    if (timerInterval.current) { clearInterval(timerInterval.current); timerInterval.current = null; }
+    try { await ble.stopBelt(); } catch {}
     endLiveActivity();
     await AsyncStorage.removeItem('live_session_stats');
     const s = statusRef.current ?? {
@@ -551,7 +590,7 @@ export default function ControlScreen() {
             <View style={{ alignItems: 'center', paddingVertical: 24 }}>
               <ActivityIndicator size="large" color="#fff" />
               <Text style={[s.subtitle, { marginTop: 12 }]}>
-                {phase === 'scanning' ? 'Hľadám pás...' : 'Pripájam...'}
+                {phase === 'scanning' ? 'Hľadám pás...' : reconnecting ? 'Znovupripájam...' : 'Pripájam...'}
               </Text>
             </View>
           )}
@@ -579,6 +618,20 @@ export default function ControlScreen() {
               >
                 <Text style={s.previewStartBtnText}>{running ? 'Zastaviť' : 'Spustiť'}</Text>
               </TouchableOpacity>
+              {running && (
+                <>
+                  <View style={s.hDivider} />
+                  <View style={[s.liveStatsRow, { marginTop: 16 }]}>
+                    <LiveStat label="kroky" value={(sessionSteps ?? 0).toLocaleString('sk-SK')} />
+                    <View style={s.vDivider} />
+                    <LiveStat label="km" value={(sessionKm ?? 0).toFixed(2)} />
+                    <View style={s.vDivider} />
+                    <LiveStat label="čas" value={formatTime(sessionSecs ?? 0)} />
+                    <View style={s.vDivider} />
+                    <LiveStat label="kcal" value={String(calcCalories(profile, status?.speed ?? targetSpeed, sessionSecs ?? 0))} />
+                  </View>
+                </>
+              )}
               <TouchableOpacity style={s.btnGhost} onPress={disconnect}>
                 <Text style={s.btnGhostText}>Odpojiť</Text>
               </TouchableOpacity>

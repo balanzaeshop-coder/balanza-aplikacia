@@ -1,9 +1,11 @@
-import { BleManager, Device, Characteristic, State } from 'react-native-ble-plx';
+import { BleManager, Device, State } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
 
 const SERVICE_UUID = '0000fe00-0000-1000-8000-00805f9b34fb';
 const CHAR_NOTIFY = '0000fe01-0000-1000-8000-00805f9b34fb';
 const CHAR_WRITE = '0000fe02-0000-1000-8000-00805f9b34fb';
+
+const RECONNECT_DELAYS_MS = [2000, 5000, 10000, 20000, 30000];
 
 export interface PadStatus {
   speed: number;       // km/h
@@ -42,7 +44,14 @@ export class WalkingPadBLE {
   private device: Device | null = null;
   private onStatus: StatusCallback | null = null;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private pollBusy = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastDeviceId: string | null = null;
+  private shouldReconnect = false;
+  private reconnectAttempt = 0;
+
   onDisconnect: (() => void) | null = null;
+  onReconnecting: ((attempt: number) => void) | null = null;
 
   constructor() {
     this.manager = new BleManager();
@@ -50,6 +59,19 @@ export class WalkingPadBLE {
 
   onStatusUpdate(cb: StatusCallback) {
     this.onStatus = cb;
+  }
+
+  enableAutoReconnect() {
+    this.shouldReconnect = true;
+    this.reconnectAttempt = 0;
+  }
+
+  disableAutoReconnect() {
+    this.shouldReconnect = false;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   async checkBluetoothState(): Promise<State> {
@@ -61,7 +83,6 @@ export class WalkingPadBLE {
     timeoutMs = 8000
   ): Promise<void> {
     const found: Device[] = [];
-
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.manager.stopDeviceScan();
@@ -70,11 +91,7 @@ export class WalkingPadBLE {
       }, timeoutMs);
 
       this.manager.startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
-        if (error) {
-          clearTimeout(timeout);
-          reject(error);
-          return;
-        }
+        if (error) { clearTimeout(timeout); reject(error); return; }
         if (device && device.name) {
           if (!found.find(d => d.id === device.id)) {
             found.push(device);
@@ -91,40 +108,82 @@ export class WalkingPadBLE {
 
   async connect(deviceId: string): Promise<void> {
     this.manager.stopDeviceScan();
-    this.device = await this.manager.connectToDevice(deviceId, { timeout: 10000 });
+    this.lastDeviceId = deviceId;
+
+    // Cancel stale connection if iOS cached it
+    try {
+      const isAlreadyConnected = await this.manager.isDeviceConnected(deviceId);
+      if (isAlreadyConnected) {
+        await this.manager.cancelDeviceConnection(deviceId);
+        await new Promise(r => setTimeout(r, 800));
+      }
+    } catch {}
+
+    this.device = await this.manager.connectToDevice(deviceId, {
+      timeout: 15000,
+      autoConnect: false,
+    });
     await this.device.discoverAllServicesAndCharacteristics();
 
     this.device.onDisconnected(() => {
       this.stopPolling();
       this.device = null;
-      if (this.onDisconnect) this.onDisconnect();
+      if (this.shouldReconnect && this.lastDeviceId) {
+        this.reconnectAttempt++;
+        this.onReconnecting?.(this.reconnectAttempt);
+        this.scheduleReconnect();
+      } else {
+        this.onDisconnect?.();
+      }
     });
 
     this.device.monitorCharacteristicForService(
       SERVICE_UUID,
       CHAR_NOTIFY,
       (error, char) => {
-        if (error) return;
-        if (char?.value) {
-          try {
-            const bytes = Array.from(Buffer.from(char.value, 'base64'));
-            const status = parseStatus(bytes);
-            if (status && this.onStatus) this.onStatus(status);
-          } catch {}
-        }
+        if (error || !char?.value) return;
+        try {
+          const bytes = Array.from(Buffer.from(char.value, 'base64'));
+          const status = parseStatus(bytes);
+          if (status && this.onStatus) this.onStatus(status);
+        } catch {}
       }
     );
 
+    // Small delay before first command to let the connection stabilise
+    await new Promise(r => setTimeout(r, 400));
     await this.setMode(1);
     this.startPolling();
+    this.reconnectAttempt = 0;
+  }
+
+  private scheduleReconnect() {
+    if (!this.lastDeviceId || !this.shouldReconnect) return;
+    const delay = RECONNECT_DELAYS_MS[Math.min(this.reconnectAttempt - 1, RECONNECT_DELAYS_MS.length - 1)];
+    this.reconnectTimer = setTimeout(async () => {
+      if (!this.lastDeviceId || !this.shouldReconnect) return;
+      try {
+        await this.connect(this.lastDeviceId);
+      } catch {
+        if (this.shouldReconnect) {
+          this.reconnectAttempt++;
+          this.onReconnecting?.(this.reconnectAttempt);
+          this.scheduleReconnect();
+        } else {
+          this.onDisconnect?.();
+        }
+      }
+    }, delay);
   }
 
   private startPolling() {
     this.stopPolling();
     this.pollInterval = setInterval(async () => {
+      if (this.pollBusy || !this.device) return;
+      this.pollBusy = true;
       try {
         await this.askStats();
-        await new Promise(r => setTimeout(r, 150));
+        await new Promise(r => setTimeout(r, 200));
         if (this.device) {
           const char = await this.device.readCharacteristicForService(SERVICE_UUID, CHAR_NOTIFY);
           if (char?.value) {
@@ -133,8 +192,10 @@ export class WalkingPadBLE {
             if (status && this.onStatus) this.onStatus(status);
           }
         }
-      } catch {}
-    }, 700);
+      } catch {} finally {
+        this.pollBusy = false;
+      }
+    }, 800);
   }
 
   private stopPolling() {
@@ -142,12 +203,14 @@ export class WalkingPadBLE {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
+    this.pollBusy = false;
   }
 
   async disconnect(): Promise<void> {
+    this.disableAutoReconnect();
     this.stopPolling();
     if (this.device) {
-      await this.device.cancelConnection();
+      try { await this.device.cancelConnection(); } catch {}
       this.device = null;
     }
   }
@@ -190,6 +253,8 @@ export class WalkingPadBLE {
   }
 
   destroy() {
+    this.disableAutoReconnect();
+    this.stopPolling();
     this.manager.destroy();
   }
 }
