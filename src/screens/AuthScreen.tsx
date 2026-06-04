@@ -37,14 +37,14 @@ export default function AuthScreen({ onDone }: { onDone: () => void }) {
   async function handleGoogle() {
     setGoogleLoading(true);
     try {
-      await GoogleSignin.hasPlayServices();
+      await GoogleSignin.signOut().catch(() => {});
       const { data } = await GoogleSignin.signIn();
       if (!data?.idToken) throw new Error('Nepodarilo sa prihlásiť cez Google.');
       const credential = GoogleAuthProvider.credential(data.idToken);
       await signInWithCredential(auth, credential);
       onDone();
     } catch (e: any) {
-      if (e.code !== 'SIGN_IN_CANCELLED') {
+      if (e.code !== 'SIGN_IN_CANCELLED' && e.code !== '-5') {
         Alert.alert('Chyba', e.message ?? 'Google prihlásenie zlyhalo.');
       }
     }
