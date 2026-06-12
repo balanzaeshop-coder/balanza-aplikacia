@@ -14,24 +14,19 @@ module.exports = function withModularHeaders(config) {
 
       let podfile = fs.readFileSync(podfilePath, 'utf8');
 
-      if (podfile.includes('use_modular_headers!')) {
+      if (podfile.includes("pod 'GoogleUtilities', :modular_headers => true")) {
         return config;
       }
 
-      // Vlož use_modular_headers! hneď za riadok s platform :ios
       const result = podfile.replace(
-        /^(platform :ios.*\n)/m,
-        '$1\nuse_modular_headers!\n'
+        /(\s+use_expo_modules!\s*\n)/,
+        `$1  pod 'GoogleUtilities', :modular_headers => true\n  pod 'RecaptchaInterop', :modular_headers => true\n`
       );
 
-      if (result === podfile) {
-        // Fallback: vlož na začiatok súboru
-        podfile = 'use_modular_headers!\n\n' + podfile;
-      } else {
-        podfile = result;
+      if (result !== podfile) {
+        fs.writeFileSync(podfilePath, result);
       }
 
-      fs.writeFileSync(podfilePath, podfile);
       return config;
     },
   ]);
