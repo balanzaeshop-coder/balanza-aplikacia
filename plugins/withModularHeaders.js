@@ -13,18 +13,34 @@ module.exports = function withModularHeaders(config) {
       }
 
       let podfile = fs.readFileSync(podfilePath, 'utf8');
+      let modified = false;
 
-      if (podfile.includes("pod 'GoogleUtilities', :modular_headers => true")) {
-        return config;
+      // 1. Add use_modular_headers! globally right after `platform :ios`
+      if (!podfile.includes('use_modular_headers!')) {
+        const withGlobal = podfile.replace(
+          /^(platform :ios.*\n)/m,
+          '$1use_modular_headers!\n'
+        );
+        if (withGlobal !== podfile) {
+          podfile = withGlobal;
+          modified = true;
+        }
       }
 
-      const result = podfile.replace(
-        /(\s+use_expo_modules!\s*\n)/,
-        `$1  pod 'GoogleUtilities', :modular_headers => true\n  pod 'RecaptchaInterop', :modular_headers => true\n`
-      );
+      // 2. Also add targeted pod declarations after use_expo_modules! (belt and suspenders)
+      if (!podfile.includes("pod 'GoogleUtilities', :modular_headers => true")) {
+        const withPods = podfile.replace(
+          /(\s+use_expo_modules!\s*\n)/,
+          `$1  pod 'GoogleUtilities', :modular_headers => true\n  pod 'RecaptchaInterop', :modular_headers => true\n`
+        );
+        if (withPods !== podfile) {
+          podfile = withPods;
+          modified = true;
+        }
+      }
 
-      if (result !== podfile) {
-        fs.writeFileSync(podfilePath, result);
+      if (modified) {
+        fs.writeFileSync(podfilePath, podfile);
       }
 
       return config;
