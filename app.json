@@ -6,21 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0D0C14"
+    },
     "plugins": [
-      [
-        "react-native-widget-extension",
-        {
-          "widgetsFolder": "widgets",
-          "deploymentTarget": "16.2"
-        }
-      ],
-      [
-        "@kingstinct/react-native-healthkit",
-        {
-          "NSHealthShareUsageDescription": "Balanza číta dáta z Apple Health pre lepšie štatistiky aktivity",
-          "NSHealthUpdateUsageDescription": "Balanza zapisuje tvoje tréningy, kroky, vzdialenosť a kalórie do Apple Health"
-        }
-      ],
       [
         "react-native-ble-plx",
         {
@@ -34,9 +25,54 @@
       "expo-font",
       "expo-web-browser",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Balanza používa kameru na pridávanie fotiek dňa."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "iosDisplayInForeground": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Balanza potrebuje prístup k fotkám pre ukladanie fotiek dňa",
+          "cameraPermission": "Balanza používa kameru na pridávanie fotiek dňa."
+        }
+      ],
+      [
         "@react-native-google-signin/google-signin",
         {
           "iosUrlScheme": "com.googleusercontent.apps.456011197309-rl6u5ajjip4jr0vg1nulip2p0c9te6j5"
+        }
+      ],
+      [
+        "react-native-widget-extension",
+        {
+          "frequentUpdates": true,
+          "groupIdentifier": "group.sk.balanza.walkingpad",
+          "deploymentTarget": "16.4"
+        }
+      ],
+      "./plugins/withWidgetTeam",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "GoogleUtilities",
+                "modular_headers": true
+              },
+              {
+                "name": "RecaptchaInterop",
+                "modular_headers": true
+              }
+            ]
+          }
         }
       ]
     ],
@@ -47,6 +83,7 @@
       "infoPlist": {
         "NSBluetoothAlwaysUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
         "NSBluetoothPeripheralUsageDescription": "Táto appka potrebuje Bluetooth na pripojenie k chodiacemu pásu",
+        "NSCameraUsageDescription": "Balanza používa kameru na pridávanie fotiek dňa.",
         "ITSAppUsesNonExemptEncryption": false,
         "NSSupportsLiveActivities": true
       },
@@ -56,13 +93,15 @@
         "com.apple.security.application-groups": [
           "group.sk.balanza.walkingpad"
         ]
-      }
+      },
+      "buildNumber": "4"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#E8E5EF"
       },
+      "googleServicesFile": "./google-services.json",
       "package": "sk.balanza.walkingpad",
       "permissions": [
         "android.permission.BLUETOOTH",
@@ -71,14 +110,32 @@
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
       "eas": {
-        "projectId": "82a97529-76b0-4729-9af9-98b0a17dff21"
+        "projectId": "82a97529-76b0-4729-9af9-98b0a17dff21",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "BalanzaWidgets",
+                  "bundleIdentifier": "sk.balanza.walkingpad.BalanzaWidgets",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.sk.balanza.walkingpad"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     }
   }
