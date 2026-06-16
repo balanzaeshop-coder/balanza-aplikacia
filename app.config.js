@@ -91,7 +91,7 @@ module.exports = {
         'com.apple.developer.healthkit.access': [],
         'com.apple.security.application-groups': ['group.sk.balanza.walkingpad'],
       },
-      buildNumber: '3',
+      buildNumber: '5',
     },
     android: {
       adaptiveIcon: {
